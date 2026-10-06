@@ -9,7 +9,7 @@ OUTPUT_FILE = os.path.join(BASE_DIR, 'gold_data_processed.csv')
 
 def preprocess_gold_data():
     print("==================================================")
-    print("  TV1: TIỀN XỬ LÝ & NÂNG CẤP ĐẶC TRƯNG TÀI CHÍNH  ")
+    print("   TIỀN XỬ LÝ & NÂNG CẤP ĐẶC TRƯNG TÀI CHÍNH  ")
     print("==================================================")
     
     # 1. Kiểm tra sự tồn tại của file dữ liệu thô
