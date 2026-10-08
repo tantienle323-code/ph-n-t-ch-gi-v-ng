@@ -8,7 +8,7 @@ OUTPUT_FILE = os.path.join(BASE_DIR, 'gold_data_5y.csv')
 
 def fetch_gold_and_usd_data():
     print("==================================================")
-    print("    TẢI DỮ LIỆU GIÁ VÀNG & CHỈ SỐ USD (DXY)   ")
+    print("   sr TẢI DỮ LIỆU GIÁ VÀNG & CHỈ SỐ USD (DXY)   ")
     print("==================================================")
     
     # 1. Tải giá Vàng (GC=F) 5 năm
