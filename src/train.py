@@ -1,56 +1,108 @@
+import os
+import pickle
 import pandas as pd
 import numpy as np
-import os
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
-import joblib
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier, StackingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 
-# Lấy đường dẫn của thư mục gốc dự án (ph-n-t-ch-gi-v-ng)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SRC_DIR)
 
-# Đặt đường dẫn tuyệt đối đến file dữ liệu
-DATA_PATH = os.path.join(BASE_DIR, "data", "gold_data_process.csv")
-MODEL_SAVE_PATH = os.path.join(BASE_DIR, "models", "model.pkl")
-def main():
-    # 1. Đọc dữ liệu
+DATA_PATH = os.path.join(PROJECT_ROOT, 'data', 'gold_data_processed.csv')
+MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
+MODEL_PATH = os.path.join(MODEL_DIR, 'gold_model.pkl')
+
+def train_and_evaluate():
+    print("==================================================")
+    print("  HUẤN LUYỆN MÔ HÌNH ENSEMBLE STACKING CẤP ĐỘ QUANT ")
+    print("==================================================")
+
     if not os.path.exists(DATA_PATH):
-        print(f"❌ Chưa tìm thấy file dữ liệu tại {DATA_PATH}. Hãy kiểm tra lại thư mục data!")
+        print(f"❌ Lỗi: Không tìm thấy file '{DATA_PATH}'!")
         return
 
-    print("📊 Đang đọc dữ liệu...")
     df = pd.read_csv(DATA_PATH)
-    print("Các cột có trong dữ liệu:", df.columns.tolist())
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df.sort_values('Date').reset_index(drop=True)
 
-    # 2. Xử lý dữ liệu & Chọn Feature (Thay đổi tên cột cho khớp với file của TV1)
-    # Tạm thời giả định các cột đặc trưng và cột Target (1: Tăng, 0: Giảm)
-    feature_cols = [col for col in df.columns if col not in ['Date', 'Target', 'Close_Next']]
-    
+    ignore_cols = ['Date', 'Target', 'Open', 'High', 'Low', 'Close', 'Volume']
+    feature_cols = [col for col in df.columns if col not in ignore_cols]
+
     X = df[feature_cols]
     y = df['Target']
 
-    # 3. Chia tập dữ liệu (Train/Test) theo thứ tự thời gian
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    split_idx = int(len(df) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
-    # 4. Huấn luyện mô hình Random Forest
-    print("🤖 Đang huấn luyện mô hình AI...")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+    estimators = [
+        ('et', ExtraTreesClassifier(n_estimators=150, max_depth=8, random_state=42)),
+        ('gb', GradientBoostingClassifier(n_estimators=100, max_depth=4, learning_rate=0.03, random_state=42)),
+        ('rf', RandomForestClassifier(n_estimators=150, max_depth=7, random_state=42, class_weight='balanced'))
+    ]
 
-    # 5. Đánh giá mô hình
-    y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1]
+    candidate_models = {
+        'Extra Trees': estimators[0][1],
+        'Gradient Boosting': estimators[1][1],
+        'Random Forest': estimators[2][1],
+        'Stacking Ensemble (Advanced)': StackingClassifier(estimators=estimators, final_estimator=LogisticRegression(), cv=5)
+    }
 
-    print("\n================ KẾT QUẢ ĐÁNH GIÁ ================")
-    print(f" Accuracy Score: {accuracy_score(y_test, y_pred):.4f}")
-    print(f" ROC-AUC Score:  {roc_auc_score(y_test, y_proba):.4f}")
-    print("\nChi tiết Báo cáo Phân loại:")
-    print(classification_report(y_test, y_pred))
+    best_model = None
+    best_name = ""
+    best_f1 = -1.0
+    best_metrics = {}
 
-    # 6. Lưu file mô hình vào thư mục models/
-    os.makedirs("models", exist_ok=True)
-    joblib.dump(model, MODEL_SAVE_PATH)
-    print(f"✅ Đã xuất và lưu mô hình thành công tại: {MODEL_SAVE_PATH}")
+    print("\n--------------------------------------------------")
+    for name, model in candidate_models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0)
+        rec = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        
+        print(f"🔹 {name:30s} | Acc: {acc*100:.2f}% | Prec: {prec*100:.2f}% | Rec: {rec*100:.2f}% | F1: {f1*100:.2f}%")
+        
+        if f1 > best_f1:
+            best_f1 = f1
+            best_model = model
+            best_name = name
+            best_metrics = {
+                'accuracy': acc,
+                'precision': prec,
+                'recall': rec,
+                'f1_score': f1,
+                'confusion_matrix': confusion_matrix(y_test, y_pred).tolist(),
+                'report': classification_report(y_test, y_pred, output_dict=True)
+            }
 
-if __name__ == "__main__":
-    main()
+    print("--------------------------------------------------")
+    print(f"🏆 MÔ HÌNH XUẤT SẮC NHẤT: {best_name} (F1-Score: {best_f1*100:.2f}%)")
+
+    feature_importances = {}
+    if hasattr(best_model, 'feature_importances_'):
+        importances = best_model.feature_importances_
+        feature_importances = dict(sorted(zip(feature_cols, importances), key=lambda x: x[1], reverse=True))
+    elif hasattr(best_model, 'estimators_'):
+        importances = best_model.estimators_[0].feature_importances_
+        feature_importances = dict(sorted(zip(feature_cols, importances), key=lambda x: x[1], reverse=True))
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    model_payload = {
+        'model': best_model,
+        'model_name': best_name,
+        'feature_cols': feature_cols,
+        'metrics': best_metrics,
+        'feature_importances': feature_importances
+    }
+
+    with open(MODEL_PATH, 'wb') as f:
+        pickle.dump(model_payload, f)
+
+    print(f"\n✅ Đã lưu file mô hình tại: {MODEL_PATH}")
+
+if __name__ == '__main__':
+    train_and_evaluate()
