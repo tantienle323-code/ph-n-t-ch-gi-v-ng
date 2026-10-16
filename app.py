@@ -8,7 +8,9 @@ import streamlit as st
 
 # Nạp module tin tức Tầng 3
 from src.backtest import prepare_walk_forward_backtest_data, run_backtest
+from src.data_quality import assess_market_data
 from src.forecast_tracking import summarize_forecast_history, update_forecast_history
+from src.market_refresh import market_data_refresh_lock
 from src.news_sentiment import (
     NewsFetchError,
     NewsTranslationError,
@@ -27,7 +29,7 @@ DATA_PATH = os.path.join(BASE_DIR, 'data', 'gold_data_processed.csv')
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'gold_model.pkl')
 FORECAST_HISTORY_PATH = os.path.join(BASE_DIR, 'data', 'forecast_history.sqlite3')
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_data():
     if not os.path.exists(DATA_PATH):
         return None
@@ -199,8 +201,13 @@ div[data-testid="stPlotlyChart"] {
 """)
 
 latest_row = df.iloc[-1]
-latest_data_age_days = max((pd.Timestamp.now().normalize() - latest_row['Date'].normalize()).days, 0)
-data_is_stale = latest_data_age_days > 7
+data_health = assess_market_data(df)
+data_status_label = {
+    'ready': 'DATA READY',
+    'stale': 'DỮ LIỆU CHẬM',
+    'error': 'DỮ LIỆU CÓ LỖI',
+}[data_health['status']]
+data_status_class = 'market-live' if data_health['status'] == 'ready' else 'market-stale'
 st.html(f"""
 <div class="market-header">
   <div class="market-brand">
@@ -212,14 +219,21 @@ st.html(f"""
     </div>
   </div>
   <div class="market-meta">
-    <div><span class="{'market-stale' if data_is_stale else 'market-live'}">● {'DATA CŨ' if data_is_stale else 'DATA READY'}</span></div>
-    <div>Session &nbsp; <strong>{latest_row['Date']:%d %b %Y}</strong></div>
-    <div>Dữ liệu cách đây {latest_data_age_days} ngày</div>
+    <div><span class="{data_status_class}">● {data_status_label}</span></div>
+    <div>Phiên dữ liệu mới nhất &nbsp; <strong>{latest_row['Date']:%d/%m/%Y}</strong></div>
+    <div>{data_health['row_count']:,} dòng · trễ {data_health['business_days_lag']} ngày làm việc</div>
   </div>
 </div>
 """)
-if data_is_stale:
-    st.warning("Dữ liệu đang cũ hơn 7 ngày. Hãy cập nhật trước khi sử dụng các chỉ báo.")
+if data_health['status'] == 'error':
+    st.error(
+        "Dữ liệu có vấn đề về cấu trúc hoặc giá trị. Hãy cập nhật/kiểm tra dữ liệu trước khi "
+        "dựa vào tín hiệu."
+    )
+elif data_health['status'] == 'stale':
+    st.warning("Dữ liệu đã trễ hơn 5 ngày làm việc. Hãy cập nhật trước khi dùng tín hiệu.")
+elif data_health['calendar_age_days'] and data_health['calendar_age_days'] >= 3:
+    st.info("Thị trường có thể nghỉ cuối tuần/ngày lễ; hãy đối chiếu ngày phiên mới nhất.")
 
 # SIDEBAR
 st.sidebar.markdown("### MARKET DESK")
@@ -227,11 +241,28 @@ st.sidebar.caption("GOLD · QUANT ANALYTICS")
 st.sidebar.divider()
 st.sidebar.subheader("Bảng điều khiển")
 if st.sidebar.button("↻ Cập nhật dữ liệu thị trường", use_container_width=True):
-    with st.spinner("Đang tải dữ liệu, tính chỉ báo và kiểm định lại mô hình..."):
-        refresh_market_data()
-    st.cache_data.clear()
-    st.rerun()
+    try:
+        with st.spinner("Đang tải dữ liệu, tính chỉ báo và kiểm định lại mô hình..."):
+            with market_data_refresh_lock(
+                os.path.join(BASE_DIR, 'data', '.market_refresh.lock')
+            ):
+                refresh_market_data()
+    except (OSError, RuntimeError, TimeoutError, ValueError) as error:
+        st.error(f"Không thể cập nhật thị trường: {error}")
+    else:
+        st.cache_data.clear()
+        st.rerun()
 st.sidebar.caption(f"Phiên dữ liệu mới nhất: {latest_row['Date']:%d/%m/%Y}")
+with st.sidebar.expander("Chất lượng và độ mới dữ liệu"):
+    st.write(f"Trạng thái: **{data_status_label}**")
+    st.write(f"Số bản ghi: {data_health['row_count']:,}")
+    st.write(f"Trễ: {data_health['business_days_lag']} ngày làm việc")
+    st.write(f"Ngày lịch từ phiên gần nhất: {data_health['calendar_age_days']}")
+    if data_health['issues']:
+        for issue in data_health['issues']:
+            st.warning(issue)
+    else:
+        st.success("Không phát hiện ngày trùng, giá đóng cửa lỗi hoặc ngày tương lai.")
 num_days = st.sidebar.slider(
     "Khoảng thời gian biểu đồ (phiên)",
     min_value=1,
@@ -244,12 +275,29 @@ enable_layer1 = st.sidebar.checkbox("Cảnh báo biến động", value=True)
 enable_layer2 = st.sidebar.checkbox("Điều chỉnh vị thế theo biến động", value=True)
 enable_layer3 = st.sidebar.checkbox("Phân tích tin tức", value=True)
 
+st.sidebar.subheader("Cảnh báo Telegram")
+telegram_direction_filter = st.sidebar.selectbox(
+    "Cho phép gửi hướng",
+    ['Tất cả', 'Chỉ tín hiệu tăng', 'Chỉ tín hiệu giảm'],
+    key='telegram_direction_filter',
+)
+telegram_min_confidence = st.sidebar.slider(
+    "Tin cậy tối thiểu để gửi (%)",
+    min_value=50,
+    max_value=95,
+    value=60,
+    step=5,
+    key='telegram_min_confidence',
+)
+st.sidebar.caption("Chỉ gửi khi bạn chủ động bấm nút; ứng dụng không tự gửi tin.")
+
 st.sidebar.subheader("Chỉ báo trên biểu đồ")
 show_sma = st.sidebar.checkbox("Đường trung bình SMA", value=True)
 show_bb = st.sidebar.checkbox("Dải Bollinger", value=True)
 show_daily_vol = st.sidebar.checkbox("Lợi suất hàng ngày", value=True)
 
 df_view = df.tail(num_days).copy()
+forecast_history = pd.DataFrame()
 
 tab1, tab2, tab3 = st.tabs(["Thị trường & tín hiệu", "Hiệu suất chiến lược", "Chất lượng mô hình"])
 
@@ -275,7 +323,7 @@ with tab1:
     daily_range = latest_row.get('Daily_Range_USD', 0.0)
     col4.metric("Biên độ phiên", f"${daily_range:.2f}", f"{latest_row.get('Daily_Range_Pct', 0.0):.2f}%")
 
-    if model_payload is not None:
+    if model_payload is not None and data_health['status'] != 'error':
         model = model_payload['model']
         feature_cols = model_payload['feature_cols']
         input_vector = df.iloc[[-1]][feature_cols]
@@ -300,13 +348,16 @@ with tab1:
         )
         forecast_history = update_forecast_history(
             FORECAST_HISTORY_PATH,
-            df[['Date', 'Target', 'Return']],
+            df[['Date', 'Target', 'Return', 'Close']],
             {
                 'date': latest_row['Date'],
                 'prediction': int(pred),
                 'confidence': confidence,
                 'model_name': model_payload['model_name'],
                 'previous_direction': int(latest_row['Return'] > 0),
+                'predicted_return_pct': predicted_return_pct,
+                'reference_close': float(latest_row['Close']),
+                'prediction_interval_pct': interval_half_width_pct,
                 'model_version': model_payload.get(
                     'trained_at',
                     (
@@ -339,7 +390,24 @@ with tab1:
             "Xác suất tăng/giảm là điểm predict_proba chưa hiệu chuẩn; "
             "không nên hiểu là xác suất chính xác ngoài thực tế."
         )
-        if st.button("Gửi tín hiệu này qua Telegram", key="send_telegram_signal"):
+        direction_allowed = (
+            telegram_direction_filter == 'Tất cả'
+            or (telegram_direction_filter == 'Chỉ tín hiệu tăng' and pred == 1)
+            or (telegram_direction_filter == 'Chỉ tín hiệu giảm' and pred == 0)
+        )
+        confidence_allowed = proba >= telegram_min_confidence
+        if not direction_allowed:
+            st.caption("Chưa gửi: hướng tín hiệu không khớp bộ lọc Telegram.")
+        elif not confidence_allowed:
+            st.caption(
+                f"Chưa gửi: độ tin cậy {proba:.1f}% thấp hơn ngưỡng "
+                f"{telegram_min_confidence}%."
+            )
+        if st.button(
+            "Gửi tín hiệu này qua Telegram",
+            key="send_telegram_signal",
+            disabled=not (direction_allowed and confidence_allowed),
+        ):
             from src.telegram_bot import send_telegram_message
 
             direction = "TĂNG" if pred == 1 else "GIẢM"
@@ -359,6 +427,8 @@ with tab1:
                 st.error(str(error))
             else:
                 st.success("Đã gửi tín hiệu Telegram.")
+    elif model_payload is not None:
+        st.error("Đã tạm ẩn tín hiệu vì dữ liệu có lỗi kiểm tra. Hãy cập nhật dữ liệu rồi thử lại.")
     else:
         st.warning("Chưa có mô hình đã huấn luyện.")
 
@@ -643,6 +713,20 @@ with tab3:
             "khi dữ liệu giá của phiên kế tiếp đã có. Xác suất phân lớp chưa hiệu chuẩn."
         )
         tracking = summarize_forecast_history(forecast_history)
+        tracking_window = st.selectbox(
+            "Khoảng thời gian theo dõi",
+            ['30 ngày gần nhất', '90 ngày gần nhất', 'Toàn bộ lịch sử'],
+            index=2,
+            key='forecast_tracking_window',
+        )
+        if tracking_window != 'Toàn bộ lịch sử' and not forecast_history.empty:
+            window_days = 30 if tracking_window.startswith('30') else 90
+            history_dates = pd.to_datetime(forecast_history['forecast_date'])
+            latest_forecast_date = history_dates.max()
+            forecast_history = forecast_history.loc[
+                history_dates >= latest_forecast_date - pd.Timedelta(days=window_days - 1)
+            ].copy()
+            tracking = summarize_forecast_history(forecast_history)
         if tracking['resolved_count']:
             tracking_columns = st.columns(4)
             tracking_columns[0].metric("Dự báo đã chấm", tracking['resolved_count'])
@@ -684,6 +768,63 @@ with tab3:
                     st.warning(
                         "Trên các dự báo đã chấm, F1 của mô hình thấp hơn baseline luôn dự báo tăng."
                     )
+            tracked_returns = tracking['return_metrics']
+            if tracked_returns:
+                st.markdown(
+                    f"**Sai số giá/lợi suất dự báo thực tế · "
+                    f"{tracked_returns['sample_count']} phiên**"
+                )
+                return_tracking_columns = st.columns(4)
+                return_tracking_columns[0].metric(
+                    "MAE lợi suất",
+                    f"{tracked_returns['mae_pct']:.3f}%",
+                )
+                return_tracking_columns[1].metric(
+                    "MAE baseline 0%",
+                    f"{tracked_returns['zero_baseline_mae_pct']:.3f}%",
+                )
+                return_tracking_columns[2].metric(
+                    "RMSE lợi suất",
+                    f"{tracked_returns['rmse_pct']:.3f}%",
+                )
+                return_tracking_columns[3].metric(
+                    "Đúng hướng",
+                    f"{tracked_returns['directional_accuracy'] * 100:.1f}%",
+                )
+                if tracked_returns['mae_pct'] >= tracked_returns['zero_baseline_mae_pct']:
+                    st.warning("Lợi suất dự báo chưa tốt hơn baseline 0% trên giai đoạn đã chọn.")
+                tracked_returns_history = tracking['resolved_history'].dropna(
+                    subset=['predicted_return_pct', 'actual_return_pct']
+                )
+                if not tracked_returns_history.empty:
+                    return_chart_data = tracked_returns_history.melt(
+                        id_vars=['forecast_date'],
+                        value_vars=['predicted_return_pct', 'actual_return_pct'],
+                        var_name='Loại',
+                        value_name='Lợi suất (%)',
+                    )
+                    return_chart_data['Loại'] = return_chart_data['Loại'].map({
+                        'predicted_return_pct': 'Dự báo',
+                        'actual_return_pct': 'Thực tế',
+                    })
+                    return_chart = px.line(
+                        return_chart_data,
+                        x='forecast_date',
+                        y='Lợi suất (%)',
+                        color='Loại',
+                        title='Lợi suất dự báo và thực tế theo phiên',
+                    )
+                    style_chart(return_chart)
+                    st.plotly_chart(
+                        return_chart,
+                        width='stretch',
+                        key='forecast_return_tracking',
+                    )
+            else:
+                st.info(
+                    "Chưa có đủ phiên để chấm lợi suất/giá dự báo trong khoảng đã chọn. "
+                    "Kết quả sẽ xuất hiện sau khi có giá đóng cửa phiên kế tiếp."
+                )
             resolved_history = tracking['resolved_history']
             resolved_history['Độ chính xác lũy kế (%)'] = (
                 resolved_history['predicted_direction']
@@ -722,16 +863,67 @@ with tab3:
             display_history['Độ tin cậy'] = display_history['confidence'].map(
                 lambda value: f"{value * 100:.1f}%"
             )
+            for column, label in (
+                ('predicted_return_pct', 'Lợi suất dự báo'),
+                ('actual_return_pct', 'Lợi suất thực tế'),
+            ):
+                missing_label = (
+                    'Không lưu ở phiên bản cũ'
+                    if column.startswith('predicted') else 'Chờ phiên kế'
+                )
+                if column not in display_history:
+                    display_history[label] = missing_label
+                else:
+                    display_history[label] = display_history[column].map(
+                        lambda value: (
+                            f"{value:+.3f}%" if pd.notna(value) else missing_label
+                        )
+                    )
+            for column, label in (
+                ('predicted_close', 'Giá ước tính'),
+                ('actual_close', 'Giá thực tế'),
+            ):
+                missing_label = (
+                    'Không lưu ở phiên bản cũ'
+                    if column.startswith('predicted') else 'Chờ phiên kế'
+                )
+                if column not in display_history:
+                    display_history[label] = missing_label
+                else:
+                    display_history[label] = display_history[column].map(
+                        lambda value: (
+                            f"${value:,.2f}" if pd.notna(value) else missing_label
+                        )
+                    )
             display_history['Ngày dự báo'] = pd.to_datetime(
                 display_history['forecast_date']
             ).dt.strftime('%d/%m/%Y')
+            history_columns = [
+                'Ngày dự báo',
+                'Dự báo',
+                'Thực tế',
+                'Độ tin cậy',
+                'Lợi suất dự báo',
+                'Lợi suất thực tế',
+                'Giá ước tính',
+                'Giá thực tế',
+                'model_name',
+            ]
+            visible_history = display_history[history_columns].rename(
+                columns={'model_name': 'Mô hình'}
+            )
             st.dataframe(
-                display_history[
-                    ['Ngày dự báo', 'Dự báo', 'Thực tế', 'Độ tin cậy', 'model_name']
-                ].rename(columns={'model_name': 'Mô hình'}),
+                visible_history,
                 hide_index=True,
                 width="stretch",
                 alt="Lịch sử dự báo hướng giá vàng và kết quả thực tế",
+            )
+            st.download_button(
+                "Tải lịch sử dự báo dạng CSV",
+                data=visible_history.to_csv(index=False).encode('utf-8-sig'),
+                file_name='lich_su_du_bao_vang.csv',
+                mime='text/csv',
+                width='stretch',
             )
         
         m1, m2, m3, m4 = st.columns(4)
@@ -763,6 +955,10 @@ with tab3:
         col_m1, col_m2 = st.columns(2)
         with col_m1:
             st.markdown("**10 đặc trưng quan trọng nhất**")
+            st.caption(
+                "Đây là tầm quan trọng tổng thể trong mô hình, không chứng minh nguyên nhân "
+                "hay giải thích riêng cho tín hiệu hôm nay."
+            )
             importances = model_payload.get('feature_importances', {})
             if importances:
                 top_imp = dict(list(importances.items())[:10])

@@ -1,6 +1,13 @@
 import os
+import sys
 import pandas as pd
 import yfinance as yf
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.atomic_files import atomic_output_path
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FILE = os.path.join(BASE_DIR, 'gold_data_5y.csv')
@@ -57,9 +64,8 @@ def fetch_comprehensive_financial_data():
         raise ValueError("Không có dữ liệu giá vàng hợp lệ sau khi ghép dữ liệu.")
 
     os.makedirs(BASE_DIR, exist_ok=True)
-    temporary_file = OUTPUT_FILE + '.tmp'
-    merged_df.to_csv(temporary_file, index=False)
-    os.replace(temporary_file, OUTPUT_FILE)
+    with atomic_output_path(OUTPUT_FILE) as temporary_file:
+        merged_df.to_csv(temporary_file, index=False)
     
     print(f"\nCompleted. Data saved to:\n   {OUTPUT_FILE}")
     print(f"-> Trading sessions: {len(merged_df)} rows")

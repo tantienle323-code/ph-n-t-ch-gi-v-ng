@@ -70,6 +70,50 @@ class TestForecastTracking(unittest.TestCase):
             self.assertEqual(resolved_row['actual_direction'], 1)
             self.assertEqual(len(resolved_history), 2)
 
+    def test_return_forecast_is_scored_after_following_close_arrives(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database_path = Path(temp_dir) / 'forecast_history.sqlite3'
+            first_data = pd.DataFrame({
+                'Date': pd.to_datetime(['2026-10-16']),
+                'Target': [float('nan')],
+                'Close': [100.0],
+                'Return': [0.02],
+            })
+            forecast = {
+                'date': '2026-10-16',
+                'prediction': 1,
+                'confidence': 0.7,
+                'model_name': 'Gradient Boosting',
+                'model_version': 'build-2',
+                'previous_direction': 1,
+                'predicted_return_pct': 2.0,
+                'reference_close': 100.0,
+            }
+            update_forecast_history(database_path, first_data, forecast)
+
+            updated_data = pd.DataFrame({
+                'Date': pd.to_datetime(['2026-10-16', '2026-10-19']),
+                'Target': [1.0, float('nan')],
+                'Close': [100.0, 103.0],
+                'Return': [0.02, 0.03],
+            })
+            history = update_forecast_history(
+                database_path,
+                updated_data,
+                {**forecast, 'date': '2026-10-19', 'model_version': 'build-3'},
+            )
+            settled = history.loc[history['forecast_date'] == '2026-10-16'].iloc[0]
+            summary = summarize_forecast_history(history)
+
+            self.assertEqual(settled['predicted_close'], 102.0)
+            self.assertEqual(settled['actual_close'], 103.0)
+            self.assertAlmostEqual(settled['actual_return_pct'], 3.0)
+            self.assertAlmostEqual(summary['return_metrics']['mae_pct'], 1.0)
+            self.assertAlmostEqual(
+                summary['return_metrics']['zero_baseline_mae_pct'],
+                3.0,
+            )
+
     def test_summary_uses_latest_model_forecast_for_each_date(self):
         history = pd.DataFrame([
             {

@@ -1,5 +1,6 @@
 import os
 import pickle
+import sys
 from datetime import datetime, timezone
 
 import numpy as np
@@ -23,8 +24,11 @@ from sklearn.metrics import (
     recall_score,
 )
 
-SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SRC_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.atomic_files import atomic_output_path
 
 DATA_PATH = os.path.join(PROJECT_ROOT, 'data', 'gold_data_processed.csv')
 MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
@@ -425,10 +429,9 @@ def train_and_evaluate():
     }
 
     os.makedirs(MODEL_DIR, exist_ok=True)
-    temporary_path = MODEL_PATH + '.tmp'
-    with open(temporary_path, 'wb') as model_file:
-        pickle.dump(model_payload, model_file)
-    os.replace(temporary_path, MODEL_PATH)
+    with atomic_output_path(MODEL_PATH) as temporary_path:
+        with open(temporary_path, 'wb') as model_file:
+            pickle.dump(model_payload, model_file)
     print(f"\nSaved current prediction model to: {MODEL_PATH}")
     print("Test metrics are out-of-sample walk-forward results.")
 

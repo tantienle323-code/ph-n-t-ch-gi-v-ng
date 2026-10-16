@@ -1,6 +1,13 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.atomic_files import atomic_output_path
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_FILE = os.path.join(BASE_DIR, 'gold_data_5y.csv')
@@ -106,9 +113,8 @@ def preprocess_gold_data(input_file=INPUT_FILE, output_file=OUTPUT_FILE):
     if df_clean.empty:
         raise ValueError("Tiền xử lý không tạo được dữ liệu hợp lệ; file kết quả cũ được giữ nguyên.")
 
-    temporary_file = output_file + '.tmp'
-    df_clean.to_csv(temporary_file, index=False)
-    os.replace(temporary_file, output_file)
+    with atomic_output_path(output_file) as temporary_file:
+        df_clean.to_csv(temporary_file, index=False)
     print(f"Preprocessing complete. Created {len(df_clean.columns)} technical and macro features.")
     return output_file
 
