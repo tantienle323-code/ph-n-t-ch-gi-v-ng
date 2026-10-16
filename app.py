@@ -7,17 +7,25 @@ import plotly.express as px
 import streamlit as st
 
 # Nạp module tin tức Tầng 3
-from src.news_sentiment import get_latest_news_sentiment
+from src.backtest import prepare_walk_forward_backtest_data, run_backtest
+from src.forecast_tracking import summarize_forecast_history, update_forecast_history
+from src.news_sentiment import (
+    NewsFetchError,
+    NewsTranslationError,
+    get_latest_news_sentiment,
+    translate_headline_to_vietnamese,
+)
 
 st.set_page_config(
-    page_title="Hệ Thống AI Phân Tích & Dự Báo Giá Vàng (Enterprise Quant)",
-    page_icon="🪙",
+    page_title="Gold Market Desk | AI Analytics",
+    page_icon="◈",
     layout="wide"
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, 'data', 'gold_data_processed.csv')
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'gold_model.pkl')
+FORECAST_HISTORY_PATH = os.path.join(BASE_DIR, 'data', 'forecast_history.sqlite3')
 
 @st.cache_data
 def load_data():
@@ -33,106 +41,388 @@ def load_model():
     with open(MODEL_PATH, 'rb') as f:
         return pickle.load(f)
 
+
+@st.cache_data(ttl=900)
+def load_news(refresh_key):
+    return get_latest_news_sentiment()
+
+
+@st.cache_data(ttl=86400, max_entries=256, show_spinner=False)
+def translate_news_title(title):
+    return translate_headline_to_vietnamese(title)
+
+
+def refresh_market_data():
+    from data.get_data import fetch_comprehensive_financial_data
+    from data.preprocess_data import preprocess_gold_data
+    from src.train import train_and_evaluate
+
+    fetch_comprehensive_financial_data()
+    preprocess_gold_data()
+    train_and_evaluate()
+
+
+def style_chart(fig):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0, 0, 0, 0)",
+        plot_bgcolor="rgba(0, 0, 0, 0)",
+        font=dict(family="Inter, sans-serif", color="#B8C4D0", size=12),
+        margin=dict(l=18, r=18, t=36, b=18),
+        hoverlabel=dict(bgcolor="#18232D", bordercolor="#344451", font_color="#F4F7FA"),
+    )
+    fig.update_xaxes(gridcolor="rgba(148, 163, 184, 0.10)", zerolinecolor="rgba(148, 163, 184, 0.15)")
+    fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.10)", zerolinecolor="rgba(148, 163, 184, 0.15)")
+    return fig
+
 df = load_data()
 model_payload = load_model()
 
-if df is None:
-    st.error("❌ Chưa tìm thấy dữ liệu `gold_data_processed.csv`. Hãy chạy `python data/get_data.py` và `python data/preprocess_data.py`!")
+if df is None or df.empty:
+    st.error("Chưa tìm thấy dữ liệu đã xử lý. Hãy tải dữ liệu thị trường để tạo bộ dữ liệu dashboard.")
+    if st.button("Tải và chuẩn bị dữ liệu thị trường"):
+        with st.spinner("Đang tải dữ liệu, tính chỉ báo và kiểm định lại mô hình..."):
+            refresh_market_data()
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
-st.title("🪙 HỆ THỐNG PHÂN TÍCH & DỰ BÁO GIÁ VÀNG AI (3-LAYER CRISIS PROTECTED)")
-st.caption("Hệ thống Quant Trading Tích hợp Phân tích Vĩ mô, Rada Tin tức Địa chính trị & Bảo vệ Rủi ro 3 Tầng")
-st.divider()
+st.html("""
+<style>
+[data-testid="stHeader"] { background: rgba(9, 15, 21, 0.94); }
+[data-testid="stSidebar"] {
+    background: #0C141B;
+    border-right: 1px solid #22303A;
+}
+[data-testid="stSidebar"] > div:first-child { padding-top: 1.5rem; }
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 { color: #EEF3F7; letter-spacing: -0.02em; }
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label { color: #B6C3CE; }
+.block-container { max-width: 1440px; padding-top: 3rem; padding-bottom: 3.5rem; }
+h1, h2, h3 { color: #F1F5F8; letter-spacing: -0.025em; }
+h2 { font-size: 1.3rem !important; margin-top: 1.5rem !important; }
+[data-testid="stCaptionContainer"] { color: #94A4B1; }
+[data-testid="stMarkdownContainer"] p { line-height: 1.65; }
+[data-testid="stMetric"] {
+    background: linear-gradient(145deg, #121D26 0%, #0F1921 100%);
+    border: 1px solid #263743;
+    border-radius: 14px;
+    padding: 17px 19px;
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.12);
+    transition: border-color 160ms ease, transform 160ms ease;
+}
+[data-testid="stMetric"]:hover { border-color: #52616B; transform: translateY(-1px); }
+[data-testid="stMetricLabel"] {
+    color: #AAB8C3;
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.035em;
+}
+[data-testid="stMetricValue"] {
+    color: #F3F6F8;
+    font-family: 'Cascadia Code', Consolas, monospace;
+    font-size: clamp(1.25rem, 2vw, 1.85rem);
+}
+[data-testid="stMetricDelta"] { font-size: 0.78rem; font-weight: 500; }
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 0.45rem;
+    border-bottom: 1px solid #25343F;
+}
+[data-testid="stTabs"] button[role="tab"] {
+    color: #AEBBC6;
+    padding: 0.85rem 1.1rem;
+    border-radius: 8px 8px 0 0;
+    transition: background 150ms ease, color 150ms ease;
+}
+[data-testid="stTabs"] button[role="tab"]:hover { color: #F4F6F8; background: #131F28; }
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    color: #F4CC68;
+    border-bottom-color: #F2C14E;
+}
+[data-testid="stAlert"] { border-radius: 12px; border: 1px solid #2A3A45; }
+.stButton > button,
+[data-testid="stDownloadButton"] > button {
+    border-radius: 9px;
+    border: 1px solid #34444F;
+    transition: border-color 150ms ease, background 150ms ease;
+}
+.stButton > button:hover,
+[data-testid="stDownloadButton"] > button:hover { border-color: #F2C14E; }
+.market-header {
+    position: relative;
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    padding: 1.55rem 1.55rem; margin: .5rem 0 1.5rem;
+    background: linear-gradient(112deg, #14212A 0%, #111A22 68%, #172019 100%);
+    border: 1px solid #2B3A44; border-radius: 16px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+}
+.market-header::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    border-radius: 16px 0 0 16px;
+    background: linear-gradient(180deg, #F2C14E, #B58A2C);
+    content: "";
+}
+.market-brand { display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1 1 auto; }
+.market-brand > div:last-child { min-width: 0; }
+.market-logo {
+    display: grid; place-items: center; width: 42px; height: 42px;
+    flex: 0 0 42px;
+    border: 1px solid rgba(242, 193, 78, 0.24);
+    border-radius: 13px; background: rgba(242, 193, 78, 0.1);
+    color: #F2C14E; font-weight: 800; font-family: 'Cascadia Code', Consolas, monospace;
+}
+.market-kicker {
+    color: #B7C4CE; text-transform: uppercase; letter-spacing: .12em;
+    font-size: .72rem; font-weight: 700; line-height: 1.6;
+    white-space: nowrap;
+}
+.market-title { color: #F4F7F9; font-weight: 700; font-size: 1.2rem; letter-spacing: -0.02em; margin-top: .16rem; white-space: nowrap; }
+.market-subtitle { color: #AAB8C3; font-size: .78rem; margin-top: .22rem; }
+.market-meta { color: #B8C4CD; text-align: right; font-size: .74rem; line-height: 1.8; flex: 0 1 auto; }
+.market-live { color: #66D19E; font-family: 'Cascadia Code', Consolas, monospace; }
+.market-stale { color: #F2C14E; font-family: 'Cascadia Code', Consolas, monospace; }
+div[data-testid="stPlotlyChart"] {
+    border: 1px solid #24343E;
+    border-radius: 14px;
+    background: #0E161E;
+    padding: 0.4rem;
+}
+@media (max-width: 760px) {
+    .market-header { align-items: flex-start; flex-direction: column; }
+    .market-meta { text-align: left; }
+    [data-testid="stMetric"] { padding: 14px 15px; }
+}
+</style>
+""")
+
+latest_row = df.iloc[-1]
+latest_data_age_days = max((pd.Timestamp.now().normalize() - latest_row['Date'].normalize()).days, 0)
+data_is_stale = latest_data_age_days > 7
+st.html(f"""
+<div class="market-header">
+  <div class="market-brand">
+    <div class="market-logo">Au</div>
+    <div>
+      <div class="market-kicker">Gold market intelligence</div>
+      <div class="market-title">Gold Market Desk</div>
+      <div class="market-subtitle">XAU · AI signal · risk monitoring</div>
+    </div>
+  </div>
+  <div class="market-meta">
+    <div><span class="{'market-stale' if data_is_stale else 'market-live'}">● {'DATA CŨ' if data_is_stale else 'DATA READY'}</span></div>
+    <div>Session &nbsp; <strong>{latest_row['Date']:%d %b %Y}</strong></div>
+    <div>Dữ liệu cách đây {latest_data_age_days} ngày</div>
+  </div>
+</div>
+""")
+if data_is_stale:
+    st.warning("Dữ liệu đang cũ hơn 7 ngày. Hãy cập nhật trước khi sử dụng các chỉ báo.")
 
 # SIDEBAR
-st.sidebar.header("⚙️ Cấu Hình Hệ Thống")
-num_days = st.sidebar.slider("Khung thời gian xem (Phiên gần nhất):", min_value=30, max_value=len(df), value=180)
+st.sidebar.markdown("### MARKET DESK")
+st.sidebar.caption("GOLD · QUANT ANALYTICS")
+st.sidebar.divider()
+st.sidebar.subheader("Bảng điều khiển")
+if st.sidebar.button("↻ Cập nhật dữ liệu thị trường", use_container_width=True):
+    with st.spinner("Đang tải dữ liệu, tính chỉ báo và kiểm định lại mô hình..."):
+        refresh_market_data()
+    st.cache_data.clear()
+    st.rerun()
+st.sidebar.caption(f"Phiên dữ liệu mới nhất: {latest_row['Date']:%d/%m/%Y}")
+num_days = st.sidebar.slider(
+    "Khoảng thời gian biểu đồ (phiên)",
+    min_value=1,
+    max_value=len(df),
+    value=min(180, len(df)),
+)
 
-st.sidebar.subheader("🛡️ Cấu Hình Ứng Phó Rủi Ro 3 Tầng:")
-enable_layer1 = st.sidebar.checkbox("Tầng 1: Visual Volatility / Crisis Radar", value=True)
-enable_layer2 = st.sidebar.checkbox("Tầng 2: Dynamic Vol-Sizing Backtest", value=True)
-enable_layer3 = st.sidebar.checkbox("Tầng 3: News Geopolitical Sentiment Radar", value=True)
+st.sidebar.subheader("Theo dõi rủi ro")
+enable_layer1 = st.sidebar.checkbox("Cảnh báo biến động", value=True)
+enable_layer2 = st.sidebar.checkbox("Điều chỉnh vị thế theo biến động", value=True)
+enable_layer3 = st.sidebar.checkbox("Phân tích tin tức", value=True)
 
-st.sidebar.subheader("📈 Tùy Chọn Chỉ Báo Kỹ Thuật:")
-show_sma = st.sidebar.checkbox("Đường Trung Bình SMA (7, 14, 50, 200)", value=True)
-show_bb = st.sidebar.checkbox("Dải Bollinger Bands", value=True)
-show_daily_vol = st.sidebar.checkbox("📊 Biến Động Thị Trường Theo Từng Ngày", value=True)
+st.sidebar.subheader("Chỉ báo trên biểu đồ")
+show_sma = st.sidebar.checkbox("Đường trung bình SMA", value=True)
+show_bb = st.sidebar.checkbox("Dải Bollinger", value=True)
+show_daily_vol = st.sidebar.checkbox("Lợi suất hàng ngày", value=True)
 
 df_view = df.tail(num_days).copy()
-latest_row = df.iloc[-1]
 
-tab1, tab2, tab3 = st.tabs(["🔮 Dự Báo & Bảo Vệ 3 Tầng", "💼 Mô Phỏng Đầu Tư Quant (Backtest)", "🔬 Phân Tích Mô Hình AI"])
+tab1, tab2, tab3 = st.tabs(["Thị trường & tín hiệu", "Hiệu suất chiến lược", "Chất lượng mô hình"])
 
 # ================= TAB 1 =================
 with tab1:
-    col1, col2, col3, col4, col5 = st.columns(5)
+    st.caption("MARKET SNAPSHOT")
+    col1, col2 = st.columns(2)
     
-    prev_close = df.iloc[-2]['Close']
+    prev_close = df.iloc[-2]['Close'] if len(df) > 1 else latest_row['Close']
     diff = latest_row['Close'] - prev_close
-    pct = (diff / prev_close) * 100
+    pct = (diff / prev_close) * 100 if prev_close else 0.0
     
-    col1.metric("Giá Vàng (USD/Oz)", f"${latest_row['Close']:,.2f}", f"{diff:+.2f} ({pct:+.2f}%)")
+    col1.metric("Vàng · USD/oz", f"${latest_row['Close']:,.2f}", f"{diff:+.2f} ({pct:+.2f}%)")
     
     if 'USD_Index' in latest_row:
         dxy_ret = latest_row.get('USD_Index_Return', 0.0)*100
-        col2.metric("Chỉ Số USD (DXY)", f"{latest_row['USD_Index']:.2f}", f"{dxy_ret:+.2f}%")
+        col2.metric("USD Index", f"{latest_row['USD_Index']:.2f}", f"{dxy_ret:+.2f}%")
+
+    col3, col4 = st.columns(2)
     if 'US10Y_Yield' in latest_row:
-        col3.metric("Lãi Suất Mỹ 10Y", f"{latest_row['US10Y_Yield']:.2f}%")
+        col3.metric("Lợi suất 10Y", f"{latest_row['US10Y_Yield']:.2f}%")
         
     daily_range = latest_row.get('Daily_Range_USD', 0.0)
-    col4.metric("Biên Độ Giá Hôm Nay", f"${daily_range:.2f}", f"{latest_row.get('Daily_Range_Pct', 0.0):.2f}% Dao động")
-        
-    with col5:
-        if model_payload is not None:
-            model = model_payload['model']
-            feature_cols = model_payload['feature_cols']
-            input_vector = df.iloc[[-1]][feature_cols]
-            
-            pred = model.predict(input_vector)[0]
-            proba = model.predict_proba(input_vector)[0][pred] * 100
-            
-            if pred == 1:
-                st.success(f"📈 **NGÀY MAI: TĂNG**\n\nĐộ tin cậy: **{proba:.1f}%**")
-            else:
-                st.error(f"📉 **NGÀY MAI: GIẢM**\n\nĐộ tin cậy: **{proba:.1f}%**")
-        else:
-            st.warning("⚠️ Chưa nạp mô hình!")
+    col4.metric("Biên độ phiên", f"${daily_range:.2f}", f"{latest_row.get('Daily_Range_Pct', 0.0):.2f}%")
 
-    # 🔴 TẦNG 1: visual VOLATILITY / CRISIS RADAR BANNER
+    if model_payload is not None:
+        model = model_payload['model']
+        feature_cols = model_payload['feature_cols']
+        input_vector = df.iloc[[-1]][feature_cols]
+
+        pred = model.predict(input_vector)[0]
+        confidence = float(model.predict_proba(input_vector)[0][pred])
+        proba = confidence * 100
+        return_model = model_payload.get('return_model')
+        predicted_return_pct = (
+            float(return_model.predict(input_vector)[0])
+            if return_model is not None else 0.0
+        )
+        interval_half_width_pct = float(
+            model_payload.get('prediction_interval_pct', 0.0)
+        )
+        expected_close = latest_row['Close'] * (1 + predicted_return_pct / 100)
+        lower_close = latest_row['Close'] * (
+            1 + (predicted_return_pct - interval_half_width_pct) / 100
+        )
+        upper_close = latest_row['Close'] * (
+            1 + (predicted_return_pct + interval_half_width_pct) / 100
+        )
+        forecast_history = update_forecast_history(
+            FORECAST_HISTORY_PATH,
+            df[['Date', 'Target', 'Return']],
+            {
+                'date': latest_row['Date'],
+                'prediction': int(pred),
+                'confidence': confidence,
+                'model_name': model_payload['model_name'],
+                'previous_direction': int(latest_row['Return'] > 0),
+                'model_version': model_payload.get(
+                    'trained_at',
+                    (
+                        f"{model_payload['model_name']}:"
+                        f"{model_payload.get('walk_forward', {}).get('test_end_date', 'legacy')}"
+                    ),
+                ),
+            },
+        )
+        signal_text = f"Tín hiệu mô hình: {'TĂNG' if pred == 1 else 'GIẢM'} · xác suất {proba:.1f}%"
+        if pred == 1:
+            st.success(signal_text)
+        else:
+            st.error(signal_text)
+        st.metric(
+            "Giá đóng cửa ước tính phiên tới",
+            f"${expected_close:,.2f}",
+            f"{predicted_return_pct:+.3f}%",
+        )
+        interval_level = model_payload.get(
+            'return_metrics',
+            {},
+        ).get('prediction_interval_level', 0.90)
+        st.caption(
+            f"Khoảng ước lượng {(interval_level * 100):.0f}%: "
+            f"${lower_close:,.2f} – ${upper_close:,.2f}. "
+            "Độ rộng lấy từ sai số validation; không phải mức giá đảm bảo."
+        )
+        st.caption(
+            "Xác suất tăng/giảm là điểm predict_proba chưa hiệu chuẩn; "
+            "không nên hiểu là xác suất chính xác ngoài thực tế."
+        )
+        if st.button("Gửi tín hiệu này qua Telegram", key="send_telegram_signal"):
+            from src.telegram_bot import send_telegram_message
+
+            direction = "TĂNG" if pred == 1 else "GIẢM"
+            telegram_text = (
+                "TÍN HIỆU DỰ BÁO GIÁ VÀNG AI\n"
+                f"Giá hiện tại: ${latest_row['Close']:,.2f} USD/Oz\n"
+                f"Dự báo phiên tới: {direction}\n"
+                f"Độ tin cậy của mô hình: {proba:.1f}%\n"
+                f"Giá đóng cửa ước tính: ${expected_close:,.2f} USD/Oz\n"
+                f"Khoảng ước lượng: ${lower_close:,.2f} - ${upper_close:,.2f} USD/Oz\n"
+                "Xác suất phân lớp chưa hiệu chuẩn; khoảng giá không đảm bảo.\n"
+                "Chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
+            )
+            try:
+                send_telegram_message(telegram_text)
+            except (RuntimeError, OSError, ValueError) as error:
+                st.error(str(error))
+            else:
+                st.success("Đã gửi tín hiệu Telegram.")
+    else:
+        st.warning("Chưa có mô hình đã huấn luyện.")
+
+    st.divider()
+
     if enable_layer1:
         current_vol = latest_row.get('Volatility_20_Ann', 0.0)
         vol_spike = latest_row.get('Volatility_Spike_Flag', 0)
         
         if vol_spike == 1 or current_vol > 20.0:
-            st.error("🚨 **TẦNG 1 KÍCH HOẠT: CẢNH BÁO THIÊN NGA ĐEN / BÃI GIÁ (CRISIS ALERT)**\n\n"
-                     f"Biên độ giá ATR bùng nổ vượt 1.8x trung bình! Độ biến động hàng năm: `{current_vol:.1f}%`. "
-                     "Khuyên nghị: Tạm ngưng mở vị thế mới hoặc giảm 50% quy mô vốn giao dịch!")
+            st.error("**RỦI RO BIẾN ĐỘNG CAO**\n\n"
+                     f"Biến động thường niên: `{current_vol:.1f}%`. "
+                     "Cân nhắc giảm quy mô vị thế và đánh giá lại rủi ro trước khi giao dịch.")
         else:
-            st.success("🟢 **TẦNG 1: TRẠNG THÁI THỊ TRƯỜNG ỔN ĐỊNH**\n\nBiên độ biến động nằm trong ngưỡng an toàn. Tín hiệu dự báo AI đạt độ tin cậy chuẩn định lượng.")
+            st.success("**BIẾN ĐỘNG TRONG NGƯỠNG THEO DÕI**\n\n"
+                       f"Biến động thường niên hiện tại: `{current_vol:.1f}%`. Đây là chỉ báo tham khảo, không phải khuyến nghị đầu tư.")
 
-    # 🌐 TẦNG 3: RADA PHÂN TÍCH TIN TỨC ĐỊA CHÍNH TRỊ REAL-TIME
     if enable_layer3:
-        st.subheader("🌐 Tầng 3: Rada Phân Tích Cảm Sức Tin Tức Địa Chính Trị (News Geopolitical Radar)")
-        news_data = get_latest_news_sentiment()
-        
-        n_col1, n_col2 = st.columns([1, 2])
-        with n_col1:
-            st.metric("Điểm Cảm Sức Tin Tức", f"{news_data['avg_sentiment']:.2f}", 
-                      "Rủi ro Địa chính trị" if news_data['crisis_flag'] else "Bình thường")
-            if news_data['crisis_flag']:
-                st.warning("⚠️ Phát hiện từ khóa Xung đột / Chiến tranh / Trừng phạt trong dòng tin tức quốc tế!")
-            else:
-                st.info("ℹ️ Không phát hiện biến cố tin tức bất ngờ.")
-                
-        with n_col2:
-            st.markdown("**📰 Tiêu Đề Tin Tức Quốc Tế Mới Nhất Quét Được:**")
-            for item in news_data['news_list']:
-                icon = "🔴" if item['is_crisis'] else "🔹"
-                st.write(f"{icon} **[{item['source']}]** {item['title']}")
+        st.subheader("Tin tức & rủi ro địa chính trị")
+        if st.button("Làm mới tin tức", key="refresh_news"):
+            st.session_state['news_refresh_key'] = st.session_state.get('news_refresh_key', 0) + 1
+        refresh_key = st.session_state.get('news_refresh_key', 0)
+        try:
+            news_data = load_news(refresh_key)
+        except NewsFetchError as error:
+            st.error(str(error))
+        else:
+            n_col1, n_col2 = st.columns([1, 2])
+            with n_col1:
+                st.metric("Điểm cảm xúc tiêu đề", f"{news_data['avg_sentiment']:.2f}",
+                          "Có từ khóa rủi ro" if news_data['crisis_flag'] else "Không phát hiện từ khóa rủi ro")
+                if news_data['crisis_flag']:
+                    st.warning(f"Có tiêu đề chứa từ khóa rủi ro ({news_data['crisis_count']}).")
+                else:
+                    st.info("Không phát hiện từ khóa rủi ro trong tiêu đề.")
 
-    st.subheader("📈 Biểu Đồ Diễn Biến Giá Vàng & Chỉ Báo Kỹ Thuật")
+            with n_col2:
+                st.markdown("**Tin thật mới nhất · Google News RSS**")
+                translation_available = True
+                for item in news_data['news_list']:
+                    icon = "🔴" if item['is_crisis'] else "·"
+                    article_url = item.get('url', '')
+                    original_title = item.get('title', '')
+                    translated_title = original_title
+                    if translation_available:
+                        try:
+                            translated_title = translate_news_title(original_title)
+                        except NewsTranslationError:
+                            translation_available = False
+                    if article_url:
+                        st.markdown(f"{icon} **{item['source']}** · [{translated_title}]({article_url})")
+                    else:
+                        st.write(f"{icon} **{item['source']}** · {translated_title}")
+                    if translated_title != original_title:
+                        st.caption(f"Nguyên văn: {original_title} · {item['published_at']}")
+                    else:
+                        st.caption(item['published_at'])
+                if not translation_available:
+                    st.warning("Không thể dịch một số tiêu đề; các tin đó đang hiển thị bằng ngôn ngữ gốc.")
+            st.caption("Tin và liên kết bài gốc lấy từ Google News RSS; tiêu đề được dịch sang tiếng Việt, kèm nguyên văn để đối chiếu. Bản dịch máy có thể chưa chính xác tuyệt đối. Bản dịch được lưu tối đa 24 giờ; tin RSS tối đa 15 phút. Điểm cảm xúc chỉ dựa trên từ khóa tiêu đề gốc.")
+
+    st.subheader("Giá vàng và chỉ báo kỹ thuật")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['Close'], mode='lines', name='Giá Đóng Cửa', line=dict(color='#EAB308', width=2)))
+    fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['Close'], mode='lines', name='Giá đóng cửa', line=dict(color='#F2C14E', width=2.4)))
     
     if show_sma:
         for col_name, color in [('SMA_7', '#3B82F6'), ('SMA_14', '#8B5CF6'), ('SMA_50', '#EF4444'), ('SMA_200', '#10B981')]:
@@ -143,124 +433,318 @@ with tab1:
         fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['BB_Upper'], mode='lines', name='BB Upper', line=dict(color='#9CA3AF', dash='dash')))
         fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['BB_Lower'], mode='lines', name='BB Lower', line=dict(color='#9CA3AF', dash='dash')))
 
-    fig.update_layout(xaxis_title="Ngày Giao Dịch", yaxis_title="USD/Oz", hovermode="x unified", height=420)
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(xaxis_title="Ngày giao dịch", yaxis_title="USD / oz", hovermode="x unified", height=440)
+    style_chart(fig)
+    st.plotly_chart(fig, width="stretch")
 
     if show_daily_vol and 'Daily_Return_Pct' in df_view.columns:
-        st.subheader("📊 Biểu Đồ Biến Động Thị Trường Theo Từng Ngày")
-        colors = ['#10B981' if val >= 0 else '#EF4444' for val in df_view['Daily_Return_Pct']]
+        st.subheader("Lợi suất theo phiên")
+        colors = ['#54C99A' if val >= 0 else '#F07178' for val in df_view['Daily_Return_Pct']]
         fig_d = go.Figure()
-        fig_d.add_trace(go.Bar(x=df_view['Date'], y=df_view['Daily_Return_Pct'], marker_color=colors, name='% Thay Đổi Ngày'))
-        fig_d.update_layout(xaxis_title="Ngày", yaxis_title="% Thay Đổi", height=300, hovermode="x unified")
-        st.plotly_chart(fig_d, use_container_width=True)
+        fig_d.add_trace(go.Bar(x=df_view['Date'], y=df_view['Daily_Return_Pct'], marker_color=colors, name="Lợi suất (%)"))
+        fig_d.update_layout(xaxis_title="Ngày", yaxis_title="Lợi suất (%)", height=300, hovermode="x unified")
+        style_chart(fig_d)
+        st.plotly_chart(fig_d, width="stretch")
+    st.download_button(
+        "Tải CSV dữ liệu đang xem",
+        data=df_view.to_csv(index=False).encode('utf-8-sig'),
+        file_name="gold_market_data.csv",
+        mime="text/csv",
+    )
 
 # ================= TAB 2: BACKTEST QUANT =================
 with tab2:
-    st.subheader("💼 Tầng 2: Mô Phỏng Đầu Tư Quant & Quản Trị Vốn Theo Biến Động (Vol-Sizing Backtest)")
-    
-    if model_payload is not None:
-        col_set1, col_set2, col_set3 = st.columns(3)
-        initial_capital = col_set1.number_input("Số vốn ban đầu (USD):", value=10000, step=1000)
-        stop_loss_pct = col_set2.slider("Cắt lỗ tự động (Stop-Loss %):", min_value=0.5, max_value=5.0, value=1.5, step=0.1) / 100
-        take_profit_pct = col_set3.slider("Chốt lời tự động (Take-Profit %):", min_value=1.0, max_value=10.0, value=3.0, step=0.5) / 100
-        
-        model = model_payload['model']
-        feature_cols = model_payload['feature_cols']
-        
-        split_idx = int(len(df) * 0.8)
-        test_df = df.iloc[split_idx:].copy().reset_index(drop=True)
-        
-        preds = model.predict(test_df[feature_cols])
-        test_df['Signal'] = preds
-        
-        capital = initial_capital
-        portfolio = [capital]
-        win_trades, loss_trades = 0, 0
-        
-        for i in range(len(test_df) - 1):
-            price_today = test_df.loc[i, 'Close']
-            price_next = test_df.loc[i+1, 'Close']
-            sig = test_df.loc[i, 'Signal']
-            vol_spike = test_df.loc[i, 'Volatility_Spike_Flag'] if 'Volatility_Spike_Flag' in test_df.columns else 0
-            
-            if sig == 1:
-                # 🟡 TẦNG 2: Volatility Position Sizing - Giảm 50% vốn vào lệnh nếu bão giá
-                position_scale = 0.5 if (enable_layer2 and vol_spike == 1) else 1.0
-                
-                raw_ret = (price_next - price_today) / price_today
-                
-                # Quản trị rủi ro Stop-Loss & Take-Profit
-                if raw_ret <= -stop_loss_pct:
-                    actual_ret = -stop_loss_pct * position_scale
-                    loss_trades += 1
-                elif raw_ret >= take_profit_pct:
-                    actual_ret = take_profit_pct * position_scale
-                    win_trades += 1
-                else:
-                    actual_ret = raw_ret * position_scale
-                    if actual_ret > 0: win_trades += 1
-                    elif actual_ret < 0: loss_trades += 1
-                    
-                capital = capital * (1 + actual_ret)
-            portfolio.append(capital)
-            
-        test_df['AI_Portfolio'] = portfolio
-        
-        ai_final = test_df['AI_Portfolio'].iloc[-1]
-        ai_return_pct = ((ai_final - initial_capital) / initial_capital) * 100
-        
-        portfolio_series = pd.Series(portfolio)
-        rolling_max = portfolio_series.cummax()
-        drawdowns = (portfolio_series - rolling_max) / rolling_max
-        max_drawdown = drawdowns.min() * 100
-        
-        daily_returns = portfolio_series.pct_change().dropna()
-        sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252) if (len(daily_returns) > 0 and daily_returns.std() != 0) else 0.0
-        
-        total_trades = win_trades + loss_trades
-        win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+    st.subheader("Hiệu suất mô phỏng")
+    st.caption("Backtest dùng duy nhất dự báo ngoài mẫu theo walk-forward; kết quả lịch sử không đảm bảo hiệu suất tương lai.")
 
-        buy_hold_ret = (test_df['Close'] - test_df['Close'].iloc[0]) / test_df['Close'].iloc[0]
-        test_df['Buy_Hold_Portfolio'] = initial_capital * (1 + buy_hold_ret)
+    if model_payload is not None and model_payload.get('oos_predictions'):
+        try:
+            test_data, test_signals = prepare_walk_forward_backtest_data(
+                df,
+                model_payload['oos_predictions'],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            st.warning(f"Không thể dùng kết quả kiểm định hiện tại: {error}")
+        else:
+            col_set1, col_set2, col_set3, col_set4, col_set5 = st.columns(5)
+            initial_capital = col_set1.number_input("Số vốn ban đầu (USD):", value=10000, step=1000)
+            stop_loss_pct = col_set2.slider("Cắt lỗ tự động (Stop-Loss %):", min_value=0.5, max_value=5.0, value=1.5, step=0.1) / 100
+            take_profit_pct = col_set3.slider("Chốt lời tự động (Take-Profit %):", min_value=1.0, max_value=10.0, value=3.0, step=0.5) / 100
+            transaction_cost_bps = col_set4.number_input("Phí mỗi chiều (bps):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
+            slippage_bps = col_set5.number_input("Trượt giá mỗi chiều (bps):", min_value=0.0, max_value=100.0, value=0.0, step=0.5)
+            st.caption(
+                "Phí và trượt giá được nhập theo basis point (1 bps = 0,01%), "
+                "áp dụng cho cả chiều vào và chiều thoát lệnh. Tín hiệu được giữ tối đa một phiên."
+            )
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tài Sản Cuối Kỳ (AI)", f"${ai_final:,.2f}", f"{ai_return_pct:+.2f}%")
-        c2.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}", "Hiệu quả lợi nhuận/rủi ro")
-        c3.metric("Max Drawdown (MDD)", f"{max_drawdown:.2f}%", "Mức sụt giảm tối đa")
-        c4.metric("Win Rate (%)", f"{win_rate:.1f}%", f"{win_trades}/{total_trades} Lệnh thắng")
-        
-        fig_bt = go.Figure()
-        fig_bt.add_trace(go.Scatter(x=test_df['Date'], y=test_df['AI_Portfolio'], name='Chiến Lược Quant AI (Bảo vệ 3 Tầng)', line=dict(color='#10B981', width=2.5)))
-        fig_bt.add_trace(go.Scatter(x=test_df['Date'], y=test_df['Buy_Hold_Portfolio'], name='Chiến Lược Buy & Hold', line=dict(color='#6B7280', dash='dash')))
-        fig_bt.update_layout(xaxis_title="Ngày", yaxis_title="USD", height=400)
-        st.plotly_chart(fig_bt, use_container_width=True)
+            test_df = run_backtest(
+                test_data=test_data,
+                signals=test_signals,
+                initial_capital=initial_capital,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                transaction_cost_bps=transaction_cost_bps,
+                slippage_bps=slippage_bps,
+                volatility_position_sizing=enable_layer2,
+            )
+            trade_returns = test_df.loc[test_df['Signal'] == 1, 'Net_Return']
+            win_trades = int((trade_returns > 0).sum())
+
+            ai_final = test_df['AI_Portfolio'].iloc[-1]
+            ai_return_pct = ((ai_final - initial_capital) / initial_capital) * 100
+
+            portfolio_series = pd.Series(test_df['AI_Portfolio'])
+            rolling_max = portfolio_series.cummax()
+            drawdowns = (portfolio_series - rolling_max) / rolling_max
+            max_drawdown = drawdowns.min() * 100
+
+            daily_returns = portfolio_series.pct_change().dropna()
+            sharpe_ratio = (
+                (daily_returns.mean() / daily_returns.std()) * np.sqrt(252)
+                if len(daily_returns) > 0 and daily_returns.std() != 0 else 0.0
+            )
+
+            total_trades = int((test_df['Signal'].iloc[:-1] == 1).sum())
+            win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
+
+            buy_hold_ret = (test_df['Close'] - test_df['Close'].iloc[0]) / test_df['Close'].iloc[0]
+            test_df['Buy_Hold_Portfolio'] = initial_capital * (1 + buy_hold_ret)
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Tài Sản Cuối Kỳ (AI)", f"${ai_final:,.2f}", f"{ai_return_pct:+.2f}%")
+            c2.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}", "Hiệu quả lợi nhuận/rủi ro")
+            c3.metric("Max Drawdown (MDD)", f"{max_drawdown:.2f}%", "Mức sụt giảm tối đa")
+            c4.metric("Win Rate (%)", f"{win_rate:.1f}%", f"{win_trades}/{total_trades} Lệnh thắng")
+
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=test_df['Date'], y=test_df['AI_Portfolio'], name='Chiến Lược Quant AI (Bảo vệ 3 Tầng)', line=dict(color='#10B981', width=2.5)))
+            fig_bt.add_trace(go.Scatter(x=test_df['Date'], y=test_df['Buy_Hold_Portfolio'], name='Chiến Lược Buy & Hold', line=dict(color='#6B7280', dash='dash')))
+            fig_bt.update_layout(xaxis_title="Ngày", yaxis_title="Vốn mô phỏng (USD)", height=400)
+            style_chart(fig_bt)
+            st.plotly_chart(fig_bt, width="stretch")
+            st.download_button(
+                "Tải CSV kết quả backtest",
+                data=test_df.to_csv(index=False).encode('utf-8-sig'),
+                file_name="gold_backtest_results.csv",
+                mime="text/csv",
+            )
+    elif model_payload is not None:
+        st.info("Mô hình hiện tại chưa có kết quả walk-forward. Chạy lại `python src/train.py` để tạo đánh giá ngoài mẫu.")
+    else:
+        st.info("Huấn luyện mô hình để mở phần mô phỏng hiệu suất.")
 
 # ================= TAB 3: MODEL DIAGNOSTICS =================
 with tab3:
-    st.subheader("🔬 Đánh Giá Mô Hình & Độ Quan Trọng Của Các Đặc Trưng")
+    st.subheader("Chất lượng mô hình")
+    st.caption("Các chỉ số chính được tính trên dự báo ngoài mẫu theo walk-forward; các mô hình chỉ được chọn bằng validation.")
     if model_payload is not None:
         metrics = model_payload['metrics']
-        st.write(f"🏆 **Mô hình xuất sắc nhất:** `{model_payload['model_name']}`")
+        st.markdown(f"**Mô hình đang sử dụng** · `{model_payload['model_name']}`")
+        walk_forward = model_payload.get('walk_forward', {})
+        if walk_forward:
+            st.info(
+                f"Chia theo thời gian: train {walk_forward['train_size']} phiên đến "
+                f"{walk_forward['train_end_date']}; validation {walk_forward['validation_size']} phiên đến "
+                f"{walk_forward['validation_end_date']}; walk-forward test {walk_forward['test_size']} phiên "
+                f"từ {walk_forward['test_start_date']} đến {walk_forward['test_end_date']} "
+                f"({walk_forward['fold_count']} đợt, mỗi đợt tối đa {walk_forward['step_size']} phiên)."
+            )
+
+        return_metrics = model_payload.get('return_metrics')
+        if return_metrics:
+            st.markdown("**Đánh giá dự báo mức biến động phiên kế tiếp**")
+            return_columns = st.columns(4)
+            return_columns[0].metric(
+                "MAE walk-forward",
+                f"{return_metrics['mae_pct']:.3f}%",
+            )
+            return_columns[1].metric(
+                "RMSE walk-forward",
+                f"{return_metrics['rmse_pct']:.3f}%",
+            )
+            return_columns[2].metric(
+                "Đúng hướng dự báo lợi suất",
+                f"{return_metrics['directional_accuracy'] * 100:.2f}%",
+            )
+            return_columns[3].metric(
+                "Độ phủ khoảng ước lượng",
+                f"{return_metrics['prediction_interval_coverage'] * 100:.1f}%",
+                f"mục tiêu {return_metrics['prediction_interval_level'] * 100:.0f}%",
+            )
+            st.caption(
+                f"Mô hình lợi suất được chọn trên validation: "
+                f"{model_payload['return_model_name']}. Khoảng ước lượng được xác định "
+                "từ phân vị 90% sai số tuyệt đối validation; độ phủ test được báo cáo "
+                "riêng, không dùng test để điều chỉnh khoảng."
+            )
+            validation_return_metrics = model_payload.get(
+                'return_validation_metrics',
+                {},
+            )
+            if validation_return_metrics:
+                validation_return_table = pd.DataFrame.from_dict(
+                    validation_return_metrics,
+                    orient='index',
+                ).rename_axis('Ứng viên dự báo lợi suất').reset_index()
+                validation_return_table['mae_pct'] = validation_return_table[
+                    'mae_pct'
+                ].map(lambda value: f"{value:.4f}%")
+                validation_return_table['rmse_pct'] = validation_return_table[
+                    'rmse_pct'
+                ].map(lambda value: f"{value:.4f}%")
+                validation_return_table['directional_accuracy'] = validation_return_table[
+                    'directional_accuracy'
+                ].map(lambda value: f"{value * 100:.2f}%")
+                st.dataframe(
+                    validation_return_table.rename(columns={
+                        'mae_pct': 'MAE',
+                        'rmse_pct': 'RMSE',
+                        'directional_accuracy': 'Đúng hướng',
+                    }),
+                    hide_index=True,
+                    width="stretch",
+                    alt="So sánh mô hình dự báo lợi suất trên tập validation",
+                )
+
+        st.subheader("Theo dõi dự báo thực tế")
+        st.caption(
+            "Dự báo được lưu cục bộ theo ngày và phiên bản mô hình; kết quả chỉ được chấm "
+            "khi dữ liệu giá của phiên kế tiếp đã có. Xác suất phân lớp chưa hiệu chuẩn."
+        )
+        tracking = summarize_forecast_history(forecast_history)
+        if tracking['resolved_count']:
+            tracking_columns = st.columns(4)
+            tracking_columns[0].metric("Dự báo đã chấm", tracking['resolved_count'])
+            tracking_columns[1].metric(
+                "Độ chính xác thực tế",
+                f"{tracking['accuracy'] * 100:.2f}%",
+            )
+            tracking_columns[2].metric(
+                "F1 thực tế",
+                f"{tracking['f1_score'] * 100:.2f}%",
+            )
+            tracking_columns[3].metric(
+                "Tin cậy trung bình",
+                f"{tracking['average_confidence'] * 100:.1f}%",
+            )
+            tracked_baselines = tracking['baseline_metrics']
+            if tracked_baselines:
+                st.markdown(
+                    "**Đối chiếu F1 trên cùng "
+                    f"{tracked_baselines['sample_count']} phiên đã chấm**"
+                )
+                baseline_columns = st.columns(3)
+                baseline_columns[0].metric(
+                    "Mô hình · F1",
+                    f"{tracked_baselines['model']['f1_score'] * 100:.2f}%",
+                )
+                baseline_columns[1].metric(
+                    "Luôn dự báo tăng · F1",
+                    f"{tracked_baselines['always_up']['f1_score'] * 100:.2f}%",
+                )
+                baseline_columns[2].metric(
+                    "Theo hướng phiên trước · F1",
+                    f"{tracked_baselines['previous_day_direction']['f1_score'] * 100:.2f}%",
+                )
+                if (
+                    tracked_baselines['model']['f1_score']
+                    < tracked_baselines['always_up']['f1_score']
+                ):
+                    st.warning(
+                        "Trên các dự báo đã chấm, F1 của mô hình thấp hơn baseline luôn dự báo tăng."
+                    )
+            resolved_history = tracking['resolved_history']
+            resolved_history['Độ chính xác lũy kế (%)'] = (
+                resolved_history['predicted_direction']
+                .eq(resolved_history['actual_direction'])
+                .expanding()
+                .mean()
+                .mul(100)
+            )
+            accuracy_chart = px.line(
+                resolved_history,
+                x='forecast_date',
+                y='Độ chính xác lũy kế (%)',
+                title='Độ chính xác lũy kế theo ngày dự báo',
+            )
+            accuracy_chart.update_layout(height=320, yaxis_range=[0, 100])
+            style_chart(accuracy_chart)
+            st.plotly_chart(
+                accuracy_chart,
+                width="stretch",
+                key="forecast_accuracy_history",
+            )
+        else:
+            st.info("Chưa có dự báo nào được đối chiếu với giá thực tế.")
+        if tracking['pending_count']:
+            st.caption(
+                f"{tracking['pending_count']} dự báo đang chờ dữ liệu giá của phiên kế tiếp."
+            )
+        if tracking['forecast_count']:
+            direction_names = {0: 'GIẢM', 1: 'TĂNG'}
+            display_history = tracking['latest_history'].sort_values(
+                'forecast_date',
+                ascending=False,
+            ).head(20).copy()
+            display_history['Dự báo'] = display_history['predicted_direction'].map(direction_names)
+            display_history['Thực tế'] = display_history['actual_direction'].map(direction_names)
+            display_history['Độ tin cậy'] = display_history['confidence'].map(
+                lambda value: f"{value * 100:.1f}%"
+            )
+            display_history['Ngày dự báo'] = pd.to_datetime(
+                display_history['forecast_date']
+            ).dt.strftime('%d/%m/%Y')
+            st.dataframe(
+                display_history[
+                    ['Ngày dự báo', 'Dự báo', 'Thực tế', 'Độ tin cậy', 'model_name']
+                ].rename(columns={'model_name': 'Mô hình'}),
+                hide_index=True,
+                width="stretch",
+                alt="Lịch sử dự báo hướng giá vàng và kết quả thực tế",
+            )
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Accuracy", f"{metrics['accuracy']*100:.2f}%")
         m2.metric("Precision", f"{metrics['precision']*100:.2f}%")
         m3.metric("Recall", f"{metrics['recall']*100:.2f}%")
         m4.metric("F1-Score", f"{metrics['f1_score']*100:.2f}%")
+
+        baseline_metrics = model_payload.get('baseline_metrics', {})
+        if baseline_metrics:
+            st.markdown("**Đối chiếu trên cùng giai đoạn test**")
+            baseline_columns = st.columns(3)
+            baseline_columns[0].metric("Mô hình · F1", f"{metrics['f1_score'] * 100:.2f}%")
+            baseline_columns[1].metric(
+                "Luôn dự báo tăng · F1",
+                f"{baseline_metrics['always_up']['f1_score'] * 100:.2f}%",
+            )
+            baseline_columns[2].metric(
+                "Theo hướng phiên trước · F1",
+                f"{baseline_metrics['previous_day_direction']['f1_score'] * 100:.2f}%",
+            )
+            if metrics['f1_score'] < baseline_metrics['always_up']['f1_score']:
+                st.warning(
+                    "F1 của mô hình hiện thấp hơn baseline luôn dự báo tăng. "
+                    "Cần cải thiện và kiểm định thêm trước khi xem tín hiệu là có lợi thế."
+                )
         
         st.divider()
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            st.markdown("**📊 Top 10 Đặc Trưng Quan Trọng Nhất:**")
+            st.markdown("**10 đặc trưng quan trọng nhất**")
             importances = model_payload.get('feature_importances', {})
             if importances:
                 top_imp = dict(list(importances.items())[:10])
                 fig_imp = px.bar(x=list(top_imp.values()), y=list(top_imp.keys()), orientation='h', color=list(top_imp.values()), color_continuous_scale='Viridis')
                 fig_imp.update_layout(yaxis=dict(autorange="reversed"), height=380, showlegend=False)
-                st.plotly_chart(fig_imp, use_container_width=True)
+                style_chart(fig_imp)
+                st.plotly_chart(fig_imp, width="stretch")
         with col_m2:
-            st.markdown("**🧩 Ma Trận Nhầm Lẫn (Confusion Matrix):**")
+            st.markdown("**Ma trận nhầm lẫn**")
             cm = np.array(metrics['confusion_matrix'])
             fig_cm = px.imshow(cm, text_auto=True, x=['Dự báo GIẢM', 'Dự báo TĂNG'], y=['Thực tế GIẢM', 'Thực tế TĂNG'], color_continuous_scale='Blues')
             fig_cm.update_layout(height=380)
-            st.plotly_chart(fig_cm, use_container_width=True)
+            style_chart(fig_cm)
+            st.plotly_chart(fig_cm, width="stretch")
+    else:
+        st.info("Chưa có mô hình. Chạy `python src/train.py` để huấn luyện và lưu mô hình.")

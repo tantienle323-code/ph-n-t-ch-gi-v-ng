@@ -80,10 +80,12 @@ def preprocess_gold_frame(df):
             df[f'{col}_Return'] = df[col].pct_change()
             df[f'{col}_Lag1'] = df[f'{col}_Return'].shift(1)
 
-    df['Target'] = (df['Close'].shift(-1) > df['Close']).astype(int)
+    next_close = df['Close'].shift(-1)
+    df['Target'] = (next_close > df['Close']).where(next_close.notna()).astype(float)
 
     df = df.replace([np.inf, -np.inf], np.nan)
-    df_clean = df.dropna().reset_index(drop=True)
+    feature_columns = [column for column in df.columns if column != 'Target']
+    df_clean = df.dropna(subset=feature_columns).reset_index(drop=True)
 
     if df_clean.empty:
         return df.dropna(subset=['Close']).reset_index(drop=True)
@@ -93,17 +95,22 @@ def preprocess_gold_frame(df):
 
 def preprocess_gold_data(input_file=INPUT_FILE, output_file=OUTPUT_FILE):
     print("==================================================")
-    print("  TIỀN XỬ LÝ: TƯƠNG QUAN VĨ MÔ & BẢO VỆ RỦI RO 3 TẦNG ")
+    print("  PREPROCESSING: MACRO FEATURES AND RISK INDICATORS")
     print("==================================================")
 
     if not os.path.exists(input_file):
-        print(f"❌ Lỗi: Không tìm thấy file '{input_file}'!")
-        return
+        raise FileNotFoundError(f"Không tìm thấy dữ liệu nguồn: {input_file}")
 
     df = pd.read_csv(input_file)
     df_clean = preprocess_gold_frame(df)
-    df_clean.to_csv(output_file, index=False)
-    print(f"✅ Đã tiền xử lý thành công! Đã tạo {len(df_clean.columns)} đặc trưng kỹ thuật & vĩ mô.")
+    if df_clean.empty:
+        raise ValueError("Tiền xử lý không tạo được dữ liệu hợp lệ; file kết quả cũ được giữ nguyên.")
+
+    temporary_file = output_file + '.tmp'
+    df_clean.to_csv(temporary_file, index=False)
+    os.replace(temporary_file, output_file)
+    print(f"Preprocessing complete. Created {len(df_clean.columns)} technical and macro features.")
+    return output_file
 
 
 if __name__ == '__main__':

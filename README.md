@@ -11,8 +11,10 @@ Mô tả ngắn gọn:
 - `app.py`: giao diện dashboard Streamlit.
 - `data/get_data.py`: tải dữ liệu từ Yahoo Finance.
 - `data/preprocess_data.py`: tạo các chỉ báo kỹ thuật và tính nhãn mục tiêu.
-- `src/train.py`: huấn luyện mô hình Random Forest / ensemble.
-- `src/telegram_bot.py`: mẫu gửi tín hiệu dự báo qua Telegram.
+- `src/train.py`: chọn và huấn luyện mô hình bằng chia dữ liệu theo thời gian.
+- `src/forecast_tracking.py`: lưu tín hiệu dự báo và đối chiếu với kết quả thực tế.
+- `src/telegram_bot.py`: gửi tín hiệu dự báo qua Telegram.
+- `src/backtest.py`: mô phỏng chiến lược có phí giao dịch và trượt giá.
 - `models/`: lưu mô hình đã huấn luyện.
 - `data/`: lưu dữ liệu thô và dữ liệu đã xử lý.
 - `tests/`: kiểm tra smoke test cơ bản.
@@ -83,8 +85,21 @@ File `gold_data_processed.csv` nên có các cột chính như:
 ## Lưu ý quan trọng
 
 - `Target` là nhãn mục tiêu: `0` = giảm/đứng, `1` = tăng.
-- Dữ liệu được vô hiệu hóa nếu file quá cũ hoặc không tương thích với định dạng. Nên chạy lại `get_data.py` trước khi huấn luyện.
-- Đối với bot Telegram, cần điền token và chat ID thật trong `src/telegram_bot.py` trước khi gửi thông báo.
+- Dashboard hiển thị ngày của phiên dữ liệu gần nhất và cảnh báo khi dữ liệu cũ hơn 7 ngày. Nút **Cập nhật dữ liệu thị trường** sẽ tải dữ liệu Yahoo Finance và chạy lại tiền xử lý; dữ liệu cũ không bị ghi đè nếu ticker tải về rỗng hoặc không hợp lệ.
+- Tin tức được lấy trực tiếp từ Google News RSS, không cần API key. Dashboard hiển thị tối đa 10 tin mới nhất, đổi thời gian xuất bản sang giờ Việt Nam (ICT, UTC+7), bỏ qua tiêu đề ghi ngày trong tương lai theo giờ Việt Nam, dịch tiêu đề sang tiếng Việt qua MyMemory và giữ nguyên tiêu đề gốc để đối chiếu; liên kết mở bài gốc, bản dịch được lưu cache tối đa 24 giờ, tin RSS tối đa 15 phút và có nút làm mới. Nếu dịch vụ dịch không khả dụng, giao diện báo rõ và hiển thị tiêu đề gốc. Điểm cảm xúc chỉ phân tích từ khóa trên tiêu đề gốc, không đánh giá nội dung bài viết.
+- Quy trình kiểm định mô hình chia chuỗi theo thời gian thành train (70%), validation (15%) và test (15%). Mô hình được chọn bằng F1 trên validation; test được dự báo theo walk-forward từng khối tối đa 20 phiên, chỉ huấn luyện trên nhãn đã biết trước mỗi khối. Báo cáo test được đối chiếu với baseline luôn dự báo tăng và baseline theo hướng phiên trước. Dashboard backtest dùng chính dự báo ngoài mẫu này. Chạy lại `python src/train.py` sau khi cập nhật dữ liệu để tạo lại mô hình và kết quả kiểm định.
+- Dashboard ghi lại dự báo hiện tại vào `data/forecast_history.sqlite3` và tự đối chiếu với `Target` khi dữ liệu giá phiên kế tiếp đã có. Tab **Chất lượng mô hình** hiển thị số dự báo đã chấm, độ chính xác/F1 thực tế, độ tin cậy trung bình, độ chính xác lũy kế và so sánh F1 với các baseline trên cùng ngày đã chấm. Lịch sử được lưu cục bộ trên máy chạy ứng dụng, không đồng bộ giữa các máy và không phải dữ liệu theo tài khoản người dùng; không xóa tệp SQLite nếu muốn giữ lịch sử.
+- Ngoài hướng tăng/giảm, mô hình hồi quy ước lượng phần trăm lợi suất và giá đóng cửa phiên tới. Khoảng giá tham khảo lấy từ phân vị 90% sai số tuyệt đối trên validation; dashboard báo riêng độ phủ quan sát được trên test walk-forward. Đây là khoảng ước lượng thực nghiệm, không phải bảo đảm xác suất. Độ tin cậy phân lớp lấy từ `predict_proba` và chưa được hiệu chuẩn.
+- Dòng dữ liệu mới nhất chưa có giá đóng cửa phiên kế tiếp nên `Target` để trống, không gán giả là giảm; dòng này vẫn được giữ để tạo tín hiệu dự báo phiên tới. Dữ liệu vĩ mô được forward-fill theo thời gian và không backfill từ ngày tương lai.
+- Backtest giả định lệnh mua theo tín hiệu được giữ tối đa một phiên, giới hạn lợi nhuận/thua lỗ theo stop-loss/take-profit, và áp dụng phí/trượt giá mỗi chiều theo bps (basis point; 1 bps = 0,01%). Đây là mô phỏng lịch sử, không cam kết lợi nhuận tương lai.
+- CSV dữ liệu đang xem và kết quả backtest có thể tải trực tiếp từ dashboard.
+- Để gửi tín hiệu Telegram, tạo bot/chat rồi đặt `TELEGRAM_BOT_TOKEN` và `TELEGRAM_CHAT_ID` trong môi trường chạy Streamlit. Không lưu token trong mã nguồn hoặc repository. Ví dụ PowerShell:
+
+```powershell
+$env:TELEGRAM_BOT_TOKEN = "token-cua-ban"
+$env:TELEGRAM_CHAT_ID = "chat-id-cua-ban"
+streamlit run app.py
+```
 
 ## Chạy kiểm thử
 
