@@ -577,6 +577,37 @@ with tab3:
                 "từ phân vị 90% sai số tuyệt đối validation; độ phủ test được báo cáo "
                 "riêng, không dùng test để điều chỉnh khoảng."
             )
+            return_baseline_metrics = model_payload.get('return_baseline_metrics')
+            if return_baseline_metrics:
+                return_comparison = pd.DataFrame([
+                    {
+                        'Đánh giá trên test walk-forward': model_payload['return_model_name'],
+                        'MAE': return_metrics['mae_pct'],
+                        'RMSE': return_metrics['rmse_pct'],
+                        'Đúng hướng': return_metrics['directional_accuracy'],
+                    },
+                    {
+                        'Đánh giá trên test walk-forward': 'Baseline dự báo lợi suất 0%',
+                        'MAE': return_baseline_metrics['mae_pct'],
+                        'RMSE': return_baseline_metrics['rmse_pct'],
+                        'Đúng hướng': return_baseline_metrics['directional_accuracy'],
+                    },
+                ])
+                return_comparison['MAE'] = return_comparison['MAE'].map(
+                    lambda value: f"{value:.4f}%"
+                )
+                return_comparison['RMSE'] = return_comparison['RMSE'].map(
+                    lambda value: f"{value:.4f}%"
+                )
+                return_comparison['Đúng hướng'] = return_comparison['Đúng hướng'].map(
+                    lambda value: f"{value * 100:.2f}%"
+                )
+                st.dataframe(
+                    return_comparison,
+                    hide_index=True,
+                    width="stretch",
+                    alt="So sánh dự báo lợi suất với baseline không đổi trên test walk-forward",
+                )
             validation_return_metrics = model_payload.get(
                 'return_validation_metrics',
                 {},

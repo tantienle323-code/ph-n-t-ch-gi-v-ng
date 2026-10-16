@@ -17,6 +17,7 @@ from data.preprocess_data import preprocess_gold_frame
 from src.backtest import prepare_walk_forward_backtest_data, run_backtest
 from src.train import (
     regression_metrics,
+    _next_session_returns,
     temporal_split_indices,
     walk_forward_predict,
     walk_forward_regression_predict,
@@ -138,12 +139,12 @@ class TestGoldPipeline(unittest.TestCase):
 
         class MeanRegressor:
             def fit(self, features, targets):
-                fitted_sizes.append(len(targets))
+                fitted_sizes.append((len(features), len(targets)))
                 self.mean = float(targets.mean())
                 return self
 
-            def predict(self, features):
-                return [self.mean] * len(features)
+            def predict(self, _features):
+                return [self.mean] * len(_features)
 
         features = pd.DataFrame({'feature': range(10)})
         targets = pd.Series([float(value) for value in range(10)])
@@ -155,7 +156,7 @@ class TestGoldPipeline(unittest.TestCase):
             step_size=2,
         )
 
-        self.assertEqual(fitted_sizes, [4, 6, 8])
+        self.assertEqual(fitted_sizes, [(4, 4), (6, 6), (8, 8)])
         self.assertEqual(predictions.tolist(), [1.5, 1.5, 2.5, 2.5, 3.5, 3.5])
         self.assertEqual([fold['test_size'] for fold in folds], [2, 2, 2])
 
@@ -168,6 +169,19 @@ class TestGoldPipeline(unittest.TestCase):
         self.assertAlmostEqual(metrics['mae_pct'], 2 / 3)
         self.assertAlmostEqual(metrics['rmse_pct'], (0.5) ** 0.5)
         self.assertAlmostEqual(metrics['directional_accuracy'], 2 / 3)
+
+    def test_next_session_returns_align_with_known_targets_only(self):
+        import pandas as pd
+
+        data = pd.DataFrame({
+            'Close': [100.0, 110.0, 99.0],
+            'Target': [1.0, 0.0, np.nan],
+        })
+
+        np.testing.assert_allclose(
+            _next_session_returns(data).to_numpy(),
+            [10.0, -10.0],
+        )
 
     def test_backtest_uses_out_of_sample_signals_and_following_price(self):
         import pandas as pd

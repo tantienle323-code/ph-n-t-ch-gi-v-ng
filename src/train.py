@@ -137,6 +137,17 @@ def regression_metrics(actual, predicted):
     }
 
 
+def _next_session_returns(dataframe):
+    """Align each known Target row with its following-session percentage return."""
+    target_is_known = dataframe['Target'].notna()
+    next_returns = (
+        (dataframe['Close'].shift(-1) / dataframe['Close'] - 1) * 100
+    ).loc[target_is_known].reset_index(drop=True)
+    if next_returns.isna().any():
+        raise ValueError("Không thể căn chỉnh lợi suất phiên kế tiếp với các nhãn Target.")
+    return next_returns
+
+
 def _model_factories():
     return {
         'Extra Trees': lambda: ExtraTreesClassifier(
@@ -210,11 +221,8 @@ def train_and_evaluate():
 
     X = labeled_df[feature_cols]
     y = labeled_df['Target'].astype(int)
-    target_is_known = df['Target'].notna()
-    next_return = (
-        (df['Close'].shift(-1) / df['Close'] - 1) * 100
-    ).loc[target_is_known].reset_index(drop=True)
-    if len(next_return) != len(labeled_df) or next_return.isna().any():
+    next_return = _next_session_returns(df)
+    if len(next_return) != len(labeled_df):
         raise ValueError("Không thể căn chỉnh lợi suất phiên kế tiếp với các nhãn Target.")
 
     train_end, validation_end = temporal_split_indices(len(labeled_df))
@@ -300,6 +308,10 @@ def train_and_evaluate():
         next_return.iloc[validation_end:],
         return_oos_predictions,
     )
+    return_baseline_metrics = regression_metrics(
+        next_return.iloc[validation_end:],
+        np.zeros(len(next_return) - validation_end),
+    )
     return_test_metrics['prediction_interval_level'] = PREDICTION_INTERVAL_LEVEL
     return_test_metrics['prediction_interval_half_width_pct'] = prediction_interval_pct
     return_test_metrics['prediction_interval_coverage'] = float(np.mean(
@@ -368,6 +380,7 @@ def train_and_evaluate():
         'return_model_name': best_return_name,
         'return_validation_metrics': return_validation_metrics,
         'return_metrics': return_test_metrics,
+        'return_baseline_metrics': return_baseline_metrics,
         'prediction_interval_pct': prediction_interval_pct,
         'metrics': test_metrics,
         'validation_metrics': validation_metrics,
