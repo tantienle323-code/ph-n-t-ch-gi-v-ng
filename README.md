@@ -112,3 +112,5 @@ python -m unittest discover -s tests -v
 ## Kết luận
 
 Dự án này xây dựng một pipeline hoàn chỉnh từ tài liệu dữ liệu đến mô hình dự báo và dashboard trực quan. Nhiệm vụ tiếp theo có thể là nâng cấp mô hình, thêm backtest chuyên nghiệp hơn, và kết nối bot cảnh báo theo thời gian thực.
+
+TÔI MUỐN HIỂU VÀ NẮM RÕ CÁC KIẾN THỨC THÔI CHO BIẾT LUỒN HOẠT ĐỘNG CỦA THỊ TRƯỜNG VÀNG VÀ PHÂN TÍCH THỊ TRƯỜNG VÀNG
