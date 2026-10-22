@@ -1,4 +1,3 @@
-
 import os
 import pickle
 
@@ -9,16 +8,22 @@ import requests
 BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
+
 DATA_PATH = os.path.join(
-    BASE_DIR, "data", "gold_data_processed.csv"
+    BASE_DIR,
+    "data",
+    "gold_data_processed.csv",
 )
+
 MODEL_PATH = os.path.join(
-    BASE_DIR, "models", "gold_model.pkl"
+    BASE_DIR,
+    "models",
+    "gold_model.pkl",
 )
 
 
 def send_telegram_message(message):
-    """Send a Telegram message using environment credentials."""
+    """Gửi tin nhắn Telegram bằng thông tin trong biến môi trường."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -28,17 +33,24 @@ def send_telegram_message(message):
             "TELEGRAM_BOT_TOKEN và TELEGRAM_CHAT_ID."
         )
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    url = (
+        f"https://api.telegram.org/bot{token}/sendMessage"
+    )
 
     try:
         response = requests.post(
             url,
-            json={"chat_id": chat_id, "text": message},
+            json={
+                "chat_id": chat_id,
+                "text": message,
+            },
             timeout=(5, 15),
         )
+
     except requests.RequestException:
         raise RuntimeError(
-            "Không thể kết nối Telegram. Vui lòng thử lại sau."
+            "Không thể kết nối Telegram. "
+            "Vui lòng thử lại sau."
         ) from None
 
     if not response.ok:
@@ -48,6 +60,7 @@ def send_telegram_message(message):
 
     try:
         response_data = response.json()
+
     except ValueError:
         raise RuntimeError(
             "Telegram trả về phản hồi không hợp lệ."
@@ -56,9 +69,7 @@ def send_telegram_message(message):
     if not response_data.get("ok"):
         raise RuntimeError(
             "Telegram từ chối gửi tin nhắn: "
-            + response_data.get(
-                "description", "lỗi không xác định"
-            )
+            f"{response_data.get('description', 'lỗi không xác định')}"
         )
 
 
@@ -66,7 +77,10 @@ def build_signal_message(
     data_path=DATA_PATH,
     model_path=MODEL_PATH,
 ):
-    if not os.path.exists(model_path) or not os.path.exists(data_path):
+    if (
+        not os.path.exists(model_path)
+        or not os.path.exists(data_path)
+    ):
         raise FileNotFoundError(
             "Chưa có dữ liệu hoặc mô hình để tạo tín hiệu Telegram."
         )
@@ -83,18 +97,31 @@ def build_signal_message(
 
     model = model_payload["model"]
     feature_cols = model_payload["feature_cols"]
+
     input_data = df.iloc[[-1]][feature_cols]
 
     prediction = model.predict(input_data)[0]
+
     probability = (
-        model.predict_proba(input_data)[0][prediction] * 100
+        model.predict_proba(input_data)[0][prediction]
+        * 100
     )
 
     latest_row = df.iloc[-1]
-    direction = "TĂNG" if prediction == 1 else "GIẢM"
+
+    direction = (
+        "TĂNG"
+        if prediction == 1
+        else "GIẢM"
+    )
 
     rsi = latest_row.get("RSI_14")
-    rsi_text = f"{rsi:.1f}" if pd.notna(rsi) else "N/A"
+
+    rsi_text = (
+        f"{rsi:.1f}"
+        if pd.notna(rsi)
+        else "N/A"
+    )
 
     return (
         "TÍN HIỆU DỰ BÁO GIÁ VÀNG AI\n\n"
@@ -107,7 +134,9 @@ def build_signal_message(
 
 
 def send_telegram_alert():
-    send_telegram_message(build_signal_message())
+    send_telegram_message(
+        build_signal_message()
+    )
 
 
 if __name__ == "__main__":

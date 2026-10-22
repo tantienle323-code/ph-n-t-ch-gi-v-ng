@@ -1,2 +1,3 @@
 data/forecast_history.sqlite3
 data/.market_refresh.lock
+data/sjc_prices.csv

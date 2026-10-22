@@ -1,4 +1,3 @@
-
 """Validation and comparison helpers for user-supplied Vietnam SJC quotes.
 
 No unofficial web scraping or synthetic prices are used. Quotes must come from
@@ -21,7 +20,7 @@ GRAMS_PER_LUONG = 37.5
 
 
 def validate_sjc_quotes(frame: pd.DataFrame) -> pd.DataFrame:
-    """Normalize and validate an SJC quote table; return quotes by date."""
+    """Chuẩn hóa và kiểm tra bảng giá SJC."""
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         raise ValueError("File SJC chưa có dữ liệu báo giá.")
 
@@ -30,6 +29,7 @@ def validate_sjc_quotes(frame: pd.DataFrame) -> pd.DataFrame:
         "Buy_VND_per_luong",
         "Sell_VND_per_luong",
     }
+
     missing = sorted(required.difference(frame.columns))
 
     if missing:
@@ -38,8 +38,10 @@ def validate_sjc_quotes(frame: pd.DataFrame) -> pd.DataFrame:
         )
 
     result = frame.copy()
+
     result["Date"] = pd.to_datetime(
-        result["Date"], errors="coerce"
+        result["Date"],
+        errors="coerce",
     )
 
     for column in (
@@ -47,7 +49,8 @@ def validate_sjc_quotes(frame: pd.DataFrame) -> pd.DataFrame:
         "Sell_VND_per_luong",
     ):
         result[column] = pd.to_numeric(
-            result[column], errors="coerce"
+            result[column],
+            errors="coerce",
         )
 
     if "Source" not in result.columns:
@@ -105,7 +108,7 @@ def international_equivalent_vnd_per_luong(
     gold_usd_per_troy_ounce: float,
     usd_vnd: float,
 ) -> float:
-    """Convert USD per troy ounce to theoretical VND per luong."""
+    """Quy đổi giá vàng USD/ounce sang VND/lượng theo lý thuyết."""
     gold = float(gold_usd_per_troy_ounce)
     fx = float(usd_vnd)
 
@@ -132,7 +135,7 @@ def quote_comparison(
     gold_usd_per_ounce: float,
     usd_vnd: float,
 ) -> dict:
-    """Compare the latest SJC quote with a theoretical equivalent."""
+    """So sánh báo giá SJC mới nhất với giá quốc tế quy đổi."""
     quotes = validate_sjc_quotes(frame)
     latest = quotes.iloc[-1]
 
@@ -141,19 +144,23 @@ def quote_comparison(
         usd_vnd,
     )
 
-    buy = float(latest["Buy_VND_per_luong"])
-    sell = float(latest["Sell_VND_per_luong"])
-    midpoint = (buy + sell) / 2
+    midpoint = (
+        float(latest["Buy_VND_per_luong"])
+        + float(latest["Sell_VND_per_luong"])
+    ) / 2
 
     return {
         "date": latest["Date"],
-        "buy": buy,
-        "sell": sell,
+        "buy": float(latest["Buy_VND_per_luong"]),
+        "sell": float(latest["Sell_VND_per_luong"]),
         "source": str(latest["Source"]),
         "international_equivalent": equivalent,
         "midpoint_premium_vnd": midpoint - equivalent,
         "midpoint_premium_pct": (
             midpoint / equivalent - 1
         ) * 100,
-        "spread_vnd": sell - buy,
+        "spread_vnd": float(
+            latest["Sell_VND_per_luong"]
+            - latest["Buy_VND_per_luong"]
+        ),
     }

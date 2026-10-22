@@ -1,4 +1,3 @@
-
 import os
 import platform
 import time
@@ -7,10 +6,16 @@ from pathlib import Path
 
 
 @contextmanager
-def market_data_refresh_lock(lock_path, timeout_seconds=300):
-    """Serialize refresh pipelines across multiple dashboard processes."""
+def market_data_refresh_lock(
+    lock_path,
+    timeout_seconds=300,
+):
+    """Đảm bảo chỉ một tiến trình cập nhật dữ liệu tại một thời điểm."""
     lock_path = Path(lock_path)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     with open(lock_path, "a+b") as lock_file:
         if platform.system() == "Windows":
@@ -34,16 +39,19 @@ def market_data_refresh_lock(lock_path, timeout_seconds=300):
                         1,
                     )
                     break
+
                 except OSError:
                     if time.monotonic() >= deadline:
                         raise TimeoutError(
                             "Một tiến trình khác đang cập nhật "
                             "dữ liệu quá lâu."
                         ) from None
+
                     time.sleep(0.1)
 
             try:
                 yield
+
             finally:
                 lock_file.seek(0)
                 msvcrt.locking(
@@ -64,16 +72,19 @@ def market_data_refresh_lock(lock_path, timeout_seconds=300):
                         fcntl.LOCK_EX | fcntl.LOCK_NB,
                     )
                     break
+
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
                         raise TimeoutError(
                             "Một tiến trình khác đang cập nhật "
                             "dữ liệu quá lâu."
                         ) from None
+
                     time.sleep(0.1)
 
             try:
                 yield
+
             finally:
                 fcntl.flock(
                     lock_file.fileno(),

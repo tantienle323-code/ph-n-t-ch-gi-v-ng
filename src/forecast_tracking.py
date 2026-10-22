@@ -1,4 +1,3 @@
-
 import math
 import sqlite3
 from contextlib import closing
@@ -7,14 +6,21 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 from sklearn.metrics import accuracy_score, f1_score
 
 
-def update_forecast_history(database_path, market_data, forecast):
-    """Store a live forecast and resolve earlier outcomes when labels arrive."""
+def update_forecast_history(
+    database_path,
+    market_data,
+    forecast,
+):
+    """Lưu một dự báo mới và cập nhật kết quả các dự báo trước."""
     required_market_columns = {"Date", "Target"}
 
-    if not required_market_columns.issubset(market_data.columns):
+    if not required_market_columns.issubset(
+        market_data.columns
+    ):
         raise ValueError(
             "Dữ liệu theo dõi dự báo cần có cột Date và Target."
         )
@@ -29,16 +35,23 @@ def update_forecast_history(database_path, market_data, forecast):
     }
 
     if not required_forecast_fields.issubset(forecast):
-        raise ValueError("Thông tin dự báo thiếu trường bắt buộc.")
+        raise ValueError(
+            "Thông tin dự báo thiếu trường bắt buộc."
+        )
 
     prediction = forecast["prediction"]
 
     if prediction not in (0, 1):
-        raise ValueError("Hướng dự báo phải là 0 hoặc 1.")
+        raise ValueError(
+            "Hướng dự báo phải là 0 hoặc 1."
+        )
 
     confidence = float(forecast["confidence"])
 
-    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+    if (
+        not math.isfinite(confidence)
+        or not 0 <= confidence <= 1
+    ):
         raise ValueError(
             "Độ tin cậy dự báo phải nằm trong khoảng từ 0 đến 1."
         )
@@ -49,8 +62,13 @@ def update_forecast_history(database_path, market_data, forecast):
         .strftime("%Y-%m-%d")
     )
 
-    model_name = str(forecast["model_name"]).strip()
-    model_version = str(forecast["model_version"]).strip()
+    model_name = str(
+        forecast["model_name"]
+    ).strip()
+
+    model_version = str(
+        forecast["model_version"]
+    ).strip()
 
     if not model_name or not model_version:
         raise ValueError(
@@ -79,7 +97,8 @@ def update_forecast_history(database_path, market_data, forecast):
 
     future_close = (
         pd.to_numeric(
-            ordered_market_data["Close"], errors="coerce"
+            ordered_market_data["Close"],
+            errors="coerce",
         ).shift(-1)
         if "Close" in ordered_market_data
         else None
@@ -92,7 +111,10 @@ def update_forecast_history(database_path, market_data, forecast):
     )
 
     for index, (current_date, target) in enumerate(
-        zip(market_dates, ordered_market_data["Target"])
+        zip(
+            market_dates,
+            ordered_market_data["Target"],
+        )
     ):
         if pd.notna(target):
             if target not in (0, 1):
@@ -117,10 +139,14 @@ def update_forecast_history(database_path, market_data, forecast):
 
                     actual_return_by_date[current_date] = (
                         float(future_close.iloc[index])
-                        / current_close - 1
+                        / current_close
+                        - 1
                     ) * 100
 
-        if returns is not None and pd.notna(returns.iloc[index]):
+        if (
+            returns is not None
+            and pd.notna(returns.iloc[index])
+        ):
             previous_direction_by_date[current_date] = int(
                 returns.iloc[index] > 0
             )
@@ -132,11 +158,18 @@ def update_forecast_history(database_path, market_data, forecast):
             "Baseline theo hướng phiên trước phải là 0 hoặc 1."
         )
 
-    predicted_return_pct = forecast.get("predicted_return_pct")
-    reference_close = forecast.get("reference_close")
+    predicted_return_pct = forecast.get(
+        "predicted_return_pct"
+    )
+
+    reference_close = forecast.get(
+        "reference_close"
+    )
 
     if predicted_return_pct is not None:
-        predicted_return_pct = float(predicted_return_pct)
+        predicted_return_pct = float(
+            predicted_return_pct
+        )
 
         if not math.isfinite(predicted_return_pct):
             raise ValueError(
@@ -155,7 +188,8 @@ def update_forecast_history(database_path, market_data, forecast):
             )
 
     predicted_close = (
-        reference_close * (1 + predicted_return_pct / 100)
+        reference_close
+        * (1 + predicted_return_pct / 100)
         if (
             reference_close is not None
             and predicted_return_pct is not None
@@ -164,12 +198,17 @@ def update_forecast_history(database_path, market_data, forecast):
     )
 
     database_path = Path(database_path)
+
     database_path.parent.mkdir(
-        parents=True, exist_ok=True
+        parents=True,
+        exist_ok=True,
     )
 
     with closing(
-        sqlite3.connect(database_path, timeout=30)
+        sqlite3.connect(
+            database_path,
+            timeout=30,
+        )
     ) as connection:
         with connection:
             connection.execute(
@@ -184,14 +223,16 @@ def update_forecast_history(database_path, market_data, forecast):
                     model_version TEXT NOT NULL,
                     recorded_at TEXT NOT NULL
                         DEFAULT CURRENT_TIMESTAMP,
-                    actual_direction INTEGER CHECK (
-                        actual_direction IS NULL
-                        OR actual_direction IN (0, 1)
-                    ),
-                    previous_direction INTEGER CHECK (
-                        previous_direction IS NULL
-                        OR previous_direction IN (0, 1)
-                    ),
+                    actual_direction INTEGER
+                        CHECK (
+                            actual_direction IS NULL
+                            OR actual_direction IN (0, 1)
+                        ),
+                    previous_direction INTEGER
+                        CHECK (
+                            previous_direction IS NULL
+                            OR previous_direction IN (0, 1)
+                        ),
                     predicted_return_pct REAL,
                     reference_close REAL,
                     predicted_close REAL,
@@ -213,7 +254,8 @@ def update_forecast_history(database_path, market_data, forecast):
                 connection.execute(
                     """
                     ALTER TABLE forecast_history
-                    ADD COLUMN previous_direction INTEGER CHECK (
+                    ADD COLUMN previous_direction INTEGER
+                    CHECK (
                         previous_direction IS NULL
                         OR previous_direction IN (0, 1)
                     )
@@ -241,8 +283,10 @@ def update_forecast_history(database_path, market_data, forecast):
                 """,
                 [
                     (actual_direction, current_date)
-                    for current_date, actual_direction
-                    in actual_by_date.items()
+                    for (
+                        current_date,
+                        actual_direction,
+                    ) in actual_by_date.items()
                 ],
             )
 
@@ -254,15 +298,18 @@ def update_forecast_history(database_path, market_data, forecast):
                 """,
                 [
                     (direction, current_date)
-                    for current_date, direction
-                    in previous_direction_by_date.items()
+                    for (
+                        current_date,
+                        direction,
+                    ) in previous_direction_by_date.items()
                 ],
             )
 
             connection.executemany(
                 """
                 UPDATE forecast_history
-                SET actual_return_pct = ?, actual_close = ?
+                SET actual_return_pct = ?,
+                    actual_close = ?
                 WHERE forecast_date = ?
                 """,
                 [
@@ -271,10 +318,10 @@ def update_forecast_history(database_path, market_data, forecast):
                         actual_close_by_date[current_date],
                         current_date,
                     )
-                    for current_date in actual_return_by_date
+                    for current_date
+                    in actual_return_by_date
                 ],
             )
-
 
             connection.execute(
                 """
@@ -292,12 +339,16 @@ def update_forecast_history(database_path, market_data, forecast):
                     predicted_close
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (forecast_date, model_version) DO UPDATE SET
-                    predicted_direction = excluded.predicted_direction,
+                ON CONFLICT (forecast_date, model_version)
+                DO UPDATE SET
+                    predicted_direction =
+                        excluded.predicted_direction,
                     confidence = excluded.confidence,
                     model_name = excluded.model_name,
-                    previous_direction = excluded.previous_direction,
-                    predicted_return_pct = excluded.predicted_return_pct,
+                    previous_direction =
+                        excluded.previous_direction,
+                    predicted_return_pct =
+                        excluded.predicted_return_pct,
                     reference_close = excluded.reference_close,
                     predicted_close = excluded.predicted_close
                 """,
@@ -318,11 +369,20 @@ def update_forecast_history(database_path, market_data, forecast):
 
             rows = connection.execute(
                 """
-                SELECT forecast_date, predicted_direction, confidence,
-                       model_name, model_version, recorded_at,
-                       actual_direction, previous_direction,
-                       predicted_return_pct, reference_close,
-                       predicted_close, actual_return_pct, actual_close
+                SELECT
+                    forecast_date,
+                    predicted_direction,
+                    confidence,
+                    model_name,
+                    model_version,
+                    recorded_at,
+                    actual_direction,
+                    previous_direction,
+                    predicted_return_pct,
+                    reference_close,
+                    predicted_close,
+                    actual_return_pct,
+                    actual_close
                 FROM forecast_history
                 ORDER BY forecast_date DESC, recorded_at DESC
                 """
@@ -349,7 +409,7 @@ def update_forecast_history(database_path, market_data, forecast):
 
 
 def summarize_forecast_history(history):
-    """Summarize the latest recorded forecast for each market date."""
+    """Tổng hợp dự báo mới nhất cho từng ngày thị trường."""
     if history.empty:
         return {
             "forecast_count": 0,
@@ -369,13 +429,18 @@ def summarize_forecast_history(history):
         "actual_return_pct",
     ):
         if column not in history:
-            history = history.assign(**{column: np.nan})
+            history = history.assign(
+                **{column: np.nan}
+            )
 
     latest_by_date = (
         history.sort_values(
             ["recorded_at", "model_version"]
         )
-        .drop_duplicates("forecast_date", keep="last")
+        .drop_duplicates(
+            "forecast_date",
+            keep="last",
+        )
         .sort_values("forecast_date")
         .reset_index(drop=True)
     )
@@ -387,13 +452,20 @@ def summarize_forecast_history(history):
     if resolved.empty:
         accuracy = None
         f1 = None
+
     else:
         actual = resolved["actual_direction"].astype(int)
         predicted = resolved["predicted_direction"].astype(int)
 
-        accuracy = accuracy_score(actual, predicted)
+        accuracy = accuracy_score(
+            actual,
+            predicted,
+        )
+
         f1 = f1_score(
-            actual, predicted, zero_division=0
+            actual,
+            predicted,
+            zero_division=0,
         )
 
     baseline_history = resolved.dropna(
@@ -402,19 +474,21 @@ def summarize_forecast_history(history):
 
     if baseline_history.empty:
         baseline_metrics = {}
-    else:
-        baseline_actual = baseline_history[
-            "actual_direction"
-        ].astype(int)
 
-        baseline_predicted = baseline_history[
-            "predicted_direction"
-        ].astype(int)
+    else:
+        baseline_actual = (
+            baseline_history["actual_direction"].astype(int)
+        )
+
+        baseline_predicted = (
+            baseline_history["predicted_direction"].astype(int)
+        )
 
         baseline_metrics = {
             "model": {
                 "accuracy": accuracy_score(
-                    baseline_actual, baseline_predicted
+                    baseline_actual,
+                    baseline_predicted,
                 ),
                 "f1_score": f1_score(
                     baseline_actual,
@@ -463,6 +537,7 @@ def summarize_forecast_history(history):
 
     if return_history.empty:
         return_metrics = {}
+
     else:
         actual_returns = return_history[
             "actual_return_pct"

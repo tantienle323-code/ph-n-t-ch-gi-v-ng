@@ -1,12 +1,11 @@
-
 import os
 import sys
-
 import pandas as pd
 
 try:
     import yfinance as yf
 except ModuleNotFoundError:
+    # Giúp các bài kiểm thử vẫn import được khi chưa cài yfinance.
     class _YFinanceUnavailable:
         @staticmethod
         def Ticker(_symbol):
@@ -16,7 +15,6 @@ except ModuleNotFoundError:
             )
 
     yf = _YFinanceUnavailable()
-
 
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -32,10 +30,11 @@ OUTPUT_FILE = os.path.join(BASE_DIR, "gold_data_5y.csv")
 
 
 def fetch_comprehensive_financial_data():
-    print("=" * 50)
+    print("==================================================")
     print("   FETCHING MULTI-ASSET FINANCIAL DATA")
-    print("=" * 50)
+    print("==================================================")
 
+    # Các mã tài chính và chỉ số vĩ mô toàn cầu.
     tickers = {
         "Gold": "GC=F",
         "USD_Index": "DX-Y.NYB",
@@ -58,13 +57,14 @@ def fetch_comprehensive_financial_data():
             or "Close" not in data.columns
         ):
             raise ValueError(
-                f"Không nhận được dữ liệu hợp lệ cho {name} ({symbol}). "
-                "File cũ được giữ nguyên."
+                f"Không nhận được dữ liệu hợp lệ cho "
+                f"{name} ({symbol}). File cũ được giữ nguyên."
             )
 
-        data["Date"] = pd.to_datetime(
-            data["Date"]
-        ).dt.tz_localize(None)
+        data["Date"] = (
+            pd.to_datetime(data["Date"])
+            .dt.tz_localize(None)
+        )
 
         if name == "Gold":
             required_columns = [
@@ -86,10 +86,13 @@ def fetch_comprehensive_financial_data():
                 raise ValueError(
                     "Dữ liệu vàng thiếu các cột: "
                     + ", ".join(missing_columns)
+                    + "."
                 )
 
             data = data[required_columns]
+
         else:
+            # Với các tài sản vĩ mô, lấy giá đóng cửa.
             data = data[["Date", "Close"]].rename(
                 columns={"Close": name}
             )
@@ -113,18 +116,26 @@ def fetch_comprehensive_financial_data():
         .reset_index(drop=True)
     )
 
-    # Chỉ điền tiếp giá trị đã biết từ quá khứ.
+    # Chỉ điền tiếp giá trị đã biết từ quá khứ,
+    # không lấy dữ liệu tương lai điền ngược về trước.
     merged_df = merged_df.ffill()
 
-    if merged_df.empty or merged_df["Close"].isna().all():
+    if (
+        merged_df.empty
+        or merged_df["Close"].isna().all()
+    ):
         raise ValueError(
             "Không có dữ liệu giá vàng hợp lệ sau khi ghép dữ liệu."
         )
 
     os.makedirs(BASE_DIR, exist_ok=True)
 
+    # Ghi file theo cách nguyên tử để tránh file bị ghi dở.
     with atomic_output_path(OUTPUT_FILE) as temporary_file:
-        merged_df.to_csv(temporary_file, index=False)
+        merged_df.to_csv(
+            temporary_file,
+            index=False,
+        )
 
     print(f"\nCompleted. Data saved to:\n   {OUTPUT_FILE}")
     print(f"-> Trading sessions: {len(merged_df)} rows")

@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -6,11 +5,16 @@ import pandas as pd
 
 
 VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
-REQUIRED_MARKET_COLUMNS = {"Date", "Close", "Target"}
+
+REQUIRED_MARKET_COLUMNS = {
+    "Date",
+    "Close",
+    "Target",
+}
 
 
 def assess_market_data(data, now=None):
-    """Return freshness and integrity checks for the processed market dataset."""
+    """Kiểm tra độ mới và tính toàn vẹn của dữ liệu thị trường."""
     missing_columns = sorted(
         REQUIRED_MARKET_COLUMNS.difference(data.columns)
     )
@@ -34,7 +38,9 @@ def assess_market_data(data, now=None):
         return {
             "status": "error",
             "issues": [
-                f"Thiếu cột bắt buộc: {', '.join(missing_columns)}."
+                "Thiếu cột bắt buộc: "
+                + ", ".join(missing_columns)
+                + "."
             ],
             "row_count": len(data),
             "latest_date": None,
@@ -47,17 +53,27 @@ def assess_market_data(data, now=None):
             "missing_columns": missing_columns,
         }
 
-    dates = pd.to_datetime(data["Date"], errors="coerce")
+    dates = pd.to_datetime(
+        data["Date"],
+        errors="coerce",
+    )
+
     valid_dates = dates.dropna()
-    today = (now or datetime.now(VIETNAM_TIMEZONE)).date()
+
+    today = (
+        now or datetime.now(VIETNAM_TIMEZONE)
+    ).date()
 
     latest_date = (
-        valid_dates.max().date() if not valid_dates.empty else None
+        valid_dates.max().date()
+        if not valid_dates.empty
+        else None
     )
 
     calendar_age_days = (
         max((today - latest_date).days, 0)
-        if latest_date else None
+        if latest_date
+        else None
     )
 
     business_days_lag = (
@@ -71,11 +87,15 @@ def assess_market_data(data, now=None):
         else 0
     )
 
-    duplicate_dates = int(dates.dropna().duplicated().sum())
+    duplicate_dates = int(
+        dates.dropna().duplicated().sum()
+    )
 
     close_values = pd.to_numeric(
-        data["Close"], errors="coerce"
+        data["Close"],
+        errors="coerce",
     )
+
     invalid_close_count = int(
         (
             close_values.isna()
@@ -85,8 +105,10 @@ def assess_market_data(data, now=None):
     )
 
     raw_targets = data["Target"]
+
     numeric_targets = pd.to_numeric(
-        raw_targets, errors="coerce"
+        raw_targets,
+        errors="coerce",
     )
 
     invalid_target_count = int(
@@ -106,6 +128,7 @@ def assess_market_data(data, now=None):
         issues.append("Không có ngày giao dịch hợp lệ.")
 
     invalid_date_count = int(dates.isna().sum())
+
     if invalid_date_count:
         issues.append(
             f"{invalid_date_count} dòng có ngày không hợp lệ."
@@ -118,7 +141,8 @@ def assess_market_data(data, now=None):
 
     if invalid_close_count:
         issues.append(
-            f"{invalid_close_count} giá đóng cửa bị thiếu hoặc không hợp lệ."
+            f"{invalid_close_count} giá đóng cửa "
+            "bị thiếu hoặc không hợp lệ."
         )
 
     if invalid_target_count:
@@ -131,7 +155,10 @@ def assess_market_data(data, now=None):
             f"{future_date_count} ngày dữ liệu nằm trong tương lai."
         )
 
-    if business_days_lag is not None and business_days_lag > 5:
+    if (
+        business_days_lag is not None
+        and business_days_lag > 5
+    ):
         issues.append(
             f"Dữ liệu trễ {business_days_lag} ngày làm việc."
         )

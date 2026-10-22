@@ -1,14 +1,18 @@
-
 import pandas as pd
 
 
-def prepare_walk_forward_backtest_data(data, oos_predictions):
-    """Align out-of-sample signals with prices and include the final exit price."""
+def prepare_walk_forward_backtest_data(
+    data,
+    oos_predictions,
+):
+    """Ghép dự báo ngoài mẫu với dữ liệu giá, gồm giá thoát cuối."""
     if "Date" not in data.columns:
         raise ValueError("Dữ liệu backtest thiếu cột Date.")
 
     if not oos_predictions:
-        raise ValueError("Chưa có dự báo ngoài mẫu walk-forward.")
+        raise ValueError(
+            "Chưa có dự báo ngoài mẫu walk-forward."
+        )
 
     date_values = (
         pd.to_datetime(data["Date"])
@@ -19,7 +23,9 @@ def prepare_walk_forward_backtest_data(data, oos_predictions):
     predictions_by_date = {}
 
     for item in oos_predictions:
-        prediction_date = pd.Timestamp(item["date"]).normalize()
+        prediction_date = pd.Timestamp(
+            item["date"]
+        ).normalize()
 
         if prediction_date in predictions_by_date:
             raise ValueError(
@@ -82,6 +88,7 @@ def prepare_walk_forward_backtest_data(data, oos_predictions):
         predictions_by_date[current_date]
         for current_date in prediction_dates
     ]
+
     signals.append(0)
 
     return backtest_data, signals
@@ -97,9 +104,11 @@ def run_backtest(
     slippage_bps=0.0,
     volatility_position_sizing=True,
 ):
-    """Simulate one-day long trades with per-side costs in basis points."""
+    """Mô phỏng giao dịch mua một ngày, tính phí mỗi chiều."""
     if len(test_data) < 2:
-        raise ValueError("Backtest cần ít nhất hai phiên dữ liệu.")
+        raise ValueError(
+            "Backtest cần ít nhất hai phiên dữ liệu."
+        )
 
     if len(signals) != len(test_data):
         raise ValueError(
@@ -107,7 +116,9 @@ def run_backtest(
         )
 
     if initial_capital <= 0:
-        raise ValueError("Vốn ban đầu phải lớn hơn 0.")
+        raise ValueError(
+            "Vốn ban đầu phải lớn hơn 0."
+        )
 
     if min(
         stop_loss_pct,
@@ -129,16 +140,20 @@ def run_backtest(
     portfolio = [capital]
 
     round_trip_cost = (
-        2 * (transaction_cost_bps + slippage_bps) / 10_000
+        2 * (transaction_cost_bps + slippage_bps)
+        / 10_000
     )
 
     for index in range(len(result) - 1):
         signal = result.loc[index, "Signal"]
+
         scale = 1.0
 
         if (
             volatility_position_sizing
-            and result.loc[index].get("Volatility_Spike_Flag", 0) == 1
+            and result.loc[index].get(
+                "Volatility_Spike_Flag", 0
+            ) == 1
         ):
             scale = 0.5
 
@@ -147,8 +162,9 @@ def run_backtest(
             next_price = result.loc[index + 1, "Close"]
 
             raw_return = (
-                next_price - current_price
-            ) / current_price
+                (next_price - current_price)
+                / current_price
+            )
 
             gross_return = max(
                 -stop_loss_pct,
@@ -156,12 +172,15 @@ def run_backtest(
             )
 
             cost_return = round_trip_cost
+
             net_return = scale * (
                 gross_return - cost_return
             )
 
             result.loc[index, "Gross_Return"] = gross_return
-            result.loc[index, "Trading_Cost_Return"] = cost_return
+            result.loc[
+                index, "Trading_Cost_Return"
+            ] = cost_return
             result.loc[index, "Net_Return"] = net_return
 
             capital *= 1 + net_return
@@ -169,4 +188,5 @@ def run_backtest(
         portfolio.append(capital)
 
     result["AI_Portfolio"] = portfolio[:len(result)]
+
     return result

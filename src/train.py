@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import sys
@@ -6,6 +5,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+
 from sklearn.ensemble import (
     ExtraTreesClassifier,
     ExtraTreesRegressor,
@@ -14,6 +14,7 @@ from sklearn.ensemble import (
     RandomForestClassifier,
     RandomForestRegressor,
 )
+
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -35,10 +36,20 @@ if PROJECT_ROOT not in sys.path:
 from src.atomic_files import atomic_output_path
 
 DATA_PATH = os.path.join(
-    PROJECT_ROOT, "data", "gold_data_processed.csv"
+    PROJECT_ROOT,
+    "data",
+    "gold_data_processed.csv",
 )
-MODEL_DIR = os.path.join(PROJECT_ROOT, "models")
-MODEL_PATH = os.path.join(MODEL_DIR, "gold_model.pkl")
+
+MODEL_DIR = os.path.join(
+    PROJECT_ROOT,
+    "models",
+)
+
+MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "gold_model.pkl",
+)
 
 TRAIN_FRACTION = 0.70
 VALIDATION_FRACTION = 0.15
@@ -51,7 +62,7 @@ def temporal_split_indices(
     train_fraction=TRAIN_FRACTION,
     validation_fraction=VALIDATION_FRACTION,
 ):
-    """Return chronological train/validation boundaries; remainder is test."""
+    """Trả về ranh giới train/validation theo thứ tự thời gian."""
     if sample_count < 3:
         raise ValueError(
             "Cần ít nhất ba quan sát để chia dữ liệu theo thời gian."
@@ -71,8 +82,10 @@ def temporal_split_indices(
         )
 
     train_end = int(sample_count * train_fraction)
+
     validation_end = int(
-        sample_count * (train_fraction + validation_fraction)
+        sample_count
+        * (train_fraction + validation_fraction)
     )
 
     if (
@@ -88,20 +101,28 @@ def temporal_split_indices(
 
 
 def classification_metrics(y_true, y_pred):
-    """Calculate consistent binary-classification metrics."""
+    """Tính các chỉ số phân loại nhị phân."""
     return {
         "accuracy": accuracy_score(y_true, y_pred),
         "precision": precision_score(
-            y_true, y_pred, zero_division=0
+            y_true,
+            y_pred,
+            zero_division=0,
         ),
         "recall": recall_score(
-            y_true, y_pred, zero_division=0
+            y_true,
+            y_pred,
+            zero_division=0,
         ),
         "f1_score": f1_score(
-            y_true, y_pred, zero_division=0
+            y_true,
+            y_pred,
+            zero_division=0,
         ),
         "confusion_matrix": confusion_matrix(
-            y_true, y_pred, labels=[0, 1]
+            y_true,
+            y_pred,
+            labels=[0, 1],
         ).tolist(),
         "report": classification_report(
             y_true,
@@ -120,7 +141,7 @@ def walk_forward_predict(
     start_index,
     step_size=WALK_FORWARD_STEP_SIZE,
 ):
-    """Predict time blocks using only labels known before each block."""
+    """Dự báo từng khối thời gian, không dùng nhãn tương lai để huấn luyện."""
     if not 0 < start_index < len(features):
         raise ValueError(
             "Điểm bắt đầu walk-forward phải nằm giữa tập dữ liệu."
@@ -135,23 +156,29 @@ def walk_forward_predict(
         len(features) - start_index,
         dtype=int,
     )
+
     folds = []
 
     for block_start in range(
-        start_index, len(features), step_size
+        start_index,
+        len(features),
+        step_size,
     ):
         block_end = min(
-            block_start + step_size, len(features)
+            block_start + step_size,
+            len(features),
         )
 
         model = model_factory()
+
         model.fit(
             features.iloc[:block_start],
             targets.iloc[:block_start],
         )
 
         predictions[
-            block_start - start_index:block_end - start_index
+            block_start - start_index:
+            block_end - start_index
         ] = model.predict(
             features.iloc[block_start:block_end]
         )
@@ -173,7 +200,7 @@ def walk_forward_regression_predict(
     start_index,
     step_size=WALK_FORWARD_STEP_SIZE,
 ):
-    """Predict numeric targets in chronological blocks."""
+    """Dự báo lợi suất theo thời gian mà không sử dụng nhãn tương lai."""
     if not 0 < start_index < len(features):
         raise ValueError(
             "Điểm bắt đầu walk-forward phải nằm giữa tập dữ liệu."
@@ -188,23 +215,29 @@ def walk_forward_regression_predict(
         len(features) - start_index,
         dtype=float,
     )
+
     folds = []
 
     for block_start in range(
-        start_index, len(features), step_size
+        start_index,
+        len(features),
+        step_size,
     ):
         block_end = min(
-            block_start + step_size, len(features)
+            block_start + step_size,
+            len(features),
         )
 
         model = model_factory()
+
         model.fit(
             features.iloc[:block_start],
             targets.iloc[:block_start],
         )
 
         predictions[
-            block_start - start_index:block_end - start_index
+            block_start - start_index:
+            block_end - start_index
         ] = model.predict(
             features.iloc[block_start:block_end]
         )
@@ -220,11 +253,16 @@ def walk_forward_regression_predict(
 
 
 def regression_metrics(actual, predicted):
-    """Summarize next-session return errors in percentage points."""
+    """Tóm tắt sai số dự báo lợi suất phiên kế tiếp."""
     return {
-        "mae_pct": mean_absolute_error(actual, predicted),
+        "mae_pct": mean_absolute_error(
+            actual,
+            predicted,
+        ),
         "rmse_pct": float(
-            np.sqrt(mean_squared_error(actual, predicted))
+            np.sqrt(
+                mean_squared_error(actual, predicted)
+            )
         ),
         "directional_accuracy": accuracy_score(
             np.asarray(actual) > 0,
@@ -234,13 +272,14 @@ def regression_metrics(actual, predicted):
 
 
 def _next_session_returns(dataframe):
-    """Align known Target rows with their next-session percentage return."""
+    """Căn chỉnh Target với lợi suất thực tế của phiên kế tiếp."""
     target_is_known = dataframe["Target"].notna()
 
     next_returns = (
         (
             dataframe["Close"].shift(-1)
-            / dataframe["Close"] - 1
+            / dataframe["Close"]
+            - 1
         ) * 100
     ).loc[target_is_known].reset_index(drop=True)
 
@@ -254,6 +293,7 @@ def _next_session_returns(dataframe):
 
 
 def _model_factories():
+    """Các mô hình phân loại được so sánh."""
     return {
         "Extra Trees": lambda: ExtraTreesClassifier(
             n_estimators=150,
@@ -261,12 +301,14 @@ def _model_factories():
             random_state=42,
             n_jobs=-1,
         ),
+
         "Gradient Boosting": lambda: GradientBoostingClassifier(
             n_estimators=100,
             max_depth=4,
             learning_rate=0.03,
             random_state=42,
         ),
+
         "Random Forest": lambda: RandomForestClassifier(
             n_estimators=150,
             max_depth=7,
@@ -278,6 +320,7 @@ def _model_factories():
 
 
 def _return_model_factories():
+    """Các mô hình hồi quy lợi suất."""
     return {
         "Extra Trees Regressor": lambda: ExtraTreesRegressor(
             n_estimators=200,
@@ -286,6 +329,7 @@ def _return_model_factories():
             random_state=42,
             n_jobs=-1,
         ),
+
         "Gradient Boosting Regressor": lambda: GradientBoostingRegressor(
             n_estimators=100,
             max_depth=2,
@@ -293,6 +337,7 @@ def _return_model_factories():
             loss="huber",
             random_state=42,
         ),
+
         "Random Forest Regressor": lambda: RandomForestRegressor(
             n_estimators=200,
             max_depth=7,
@@ -304,9 +349,9 @@ def _return_model_factories():
 
 
 def train_and_evaluate():
-    print("=" * 50)
+    print("==================================================")
     print("  CHRONOLOGICAL MODEL VALIDATION")
-    print("=" * 50)
+    print("==================================================")
 
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(
@@ -314,18 +359,32 @@ def train_and_evaluate():
         )
 
     df = pd.read_csv(DATA_PATH)
+
     df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values("Date").reset_index(drop=True)
+
+    df = (
+        df.sort_values("Date")
+        .reset_index(drop=True)
+    )
 
     if "Target" not in df.columns:
-        raise ValueError("Dữ liệu không có cột Target.")
+        raise ValueError(
+            "Dữ liệu không có cột Target."
+        )
 
     ignore_cols = [
-        "Date", "Target", "Open", "High",
-        "Low", "Close", "Volume",
+        "Date",
+        "Target",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
     ]
+
     feature_cols = [
-        col for col in df.columns
+        col
+        for col in df.columns
         if col not in ignore_cols
     ]
 
@@ -341,6 +400,7 @@ def train_and_evaluate():
 
     X = labeled_df[feature_cols]
     y = labeled_df["Target"].astype(int)
+
     next_return = _next_session_returns(df)
 
     if len(next_return) != len(labeled_df):
@@ -352,15 +412,21 @@ def train_and_evaluate():
     train_end, validation_end = temporal_split_indices(
         len(labeled_df)
     )
+
     model_factories = _model_factories()
 
     validation_metrics = {}
     best_name = ""
     best_f1 = -1.0
 
+    # Huấn luyện trên tập train, chọn mô hình bằng tập validation.
     for name, model_factory in model_factories.items():
         model = model_factory()
-        model.fit(X.iloc[:train_end], y.iloc[:train_end])
+
+        model.fit(
+            X.iloc[:train_end],
+            y.iloc[:train_end],
+        )
 
         predictions = model.predict(
             X.iloc[train_end:validation_end]
@@ -370,11 +436,12 @@ def train_and_evaluate():
             y.iloc[train_end:validation_end],
             predictions,
         )
+
         validation_metrics[name] = metrics
 
         print(
-            f"{name:20s} | validation F1: "
-            f"{metrics['f1_score'] * 100:.2f}% "
+            f"{name:20s} | "
+            f"validation F1: {metrics['f1_score'] * 100:.2f}% "
             f"| accuracy: {metrics['accuracy'] * 100:.2f}%"
         )
 
@@ -383,8 +450,12 @@ def train_and_evaluate():
             best_f1 = metrics["f1_score"]
 
     selected_factory = model_factories[best_name]
-    print(f"\nSelected model on validation: {best_name}")
 
+    print(
+        f"\nSelected model on validation: {best_name}"
+    )
+
+    # So sánh mô hình hồi quy với đường cơ sở dự báo lợi suất bằng 0.
     return_factories = _return_model_factories()
 
     return_validation_metrics = {
@@ -395,12 +466,14 @@ def train_and_evaluate():
     }
 
     best_return_name = "No change"
-    best_return_mae = return_validation_metrics[
-        "No change"
-    ]["mae_pct"]
+
+    best_return_mae = (
+        return_validation_metrics["No change"]["mae_pct"]
+    )
 
     for name, model_factory in return_factories.items():
         model = model_factory()
+
         model.fit(
             X.iloc[:train_end],
             next_return.iloc[:train_end],
@@ -418,8 +491,8 @@ def train_and_evaluate():
         return_validation_metrics[name] = metrics
 
         print(
-            f"{name:28s} | validation MAE: "
-            f"{metrics['mae_pct']:.4f}% "
+            f"{name:28s} | "
+            f"validation MAE: {metrics['mae_pct']:.4f}% "
             f"| direction accuracy: "
             f"{metrics['directional_accuracy'] * 100:.2f}%"
         )
@@ -428,20 +501,26 @@ def train_and_evaluate():
             best_return_name = name
             best_return_mae = metrics["mae_pct"]
 
-    return_factory = return_factories.get(best_return_name)
+    return_factory = return_factories.get(
+        best_return_name
+    )
 
     if return_factory is None:
         return_oos_predictions = np.zeros(
             len(next_return) - validation_end
         )
+
         return_folds = []
+
         validation_return_predictions = np.zeros(
             validation_end - train_end
         )
+
         return_validation_model = None
 
     else:
         return_validation_model = return_factory()
+
         return_validation_model.fit(
             X.iloc[:train_end],
             next_return.iloc[:train_end],
@@ -453,17 +532,20 @@ def train_and_evaluate():
             )
         )
 
-        return_oos_predictions, return_folds = (
-            walk_forward_regression_predict(
-                return_factory,
-                X,
-                next_return,
-                start_index=validation_end,
-            )
+        (
+            return_oos_predictions,
+            return_folds,
+        ) = walk_forward_regression_predict(
+            return_factory,
+            X,
+            next_return,
+            start_index=validation_end,
         )
 
     validation_residuals = np.abs(
-        next_return.iloc[train_end:validation_end].to_numpy()
+        next_return.iloc[
+            train_end:validation_end
+        ].to_numpy()
         - validation_return_predictions
     )
 
@@ -481,33 +563,42 @@ def train_and_evaluate():
 
     return_baseline_metrics = regression_metrics(
         next_return.iloc[validation_end:],
-        np.zeros(len(next_return) - validation_end),
+        np.zeros(
+            len(next_return) - validation_end
+        ),
     )
 
-    return_test_metrics["prediction_interval_level"] = (
-        PREDICTION_INTERVAL_LEVEL
-    )
-    return_test_metrics["prediction_interval_half_width_pct"] = (
-        prediction_interval_pct
-    )
-    return_test_metrics["prediction_interval_coverage"] = float(
+    return_test_metrics[
+        "prediction_interval_level"
+    ] = PREDICTION_INTERVAL_LEVEL
+
+    return_test_metrics[
+        "prediction_interval_half_width_pct"
+    ] = prediction_interval_pct
+
+    return_test_metrics[
+        "prediction_interval_coverage"
+    ] = float(
         np.mean(
             np.abs(
-                next_return.iloc[validation_end:].to_numpy()
+                next_return.iloc[
+                    validation_end:
+                ].to_numpy()
                 - return_oos_predictions
             ) <= prediction_interval_pct
         )
     )
 
     print(
-        f"Walk-forward return | MAE: "
-        f"{return_test_metrics['mae_pct']:.4f}% "
+        f"Walk-forward return | "
+        f"MAE: {return_test_metrics['mae_pct']:.4f}% "
         f"| direction accuracy: "
         f"{return_test_metrics['directional_accuracy'] * 100:.2f}% "
         f"| interval coverage: "
         f"{return_test_metrics['prediction_interval_coverage'] * 100:.2f}%"
     )
 
+    # Đánh giá mô hình phân loại trên tập test theo walk-forward.
     y_test = y.iloc[validation_end:]
 
     oos_predictions, folds = walk_forward_predict(
@@ -518,7 +609,8 @@ def train_and_evaluate():
     )
 
     test_metrics = classification_metrics(
-        y_test, oos_predictions
+        y_test,
+        oos_predictions,
     )
 
     baselines = {
@@ -526,38 +618,44 @@ def train_and_evaluate():
             y_test,
             np.ones(len(y_test), dtype=int),
         ),
+
         "previous_day_direction": classification_metrics(
             y_test,
             (
-                X.iloc[validation_end:]["Return"].to_numpy() > 0
+                X.iloc[validation_end:]["Return"].to_numpy()
+                > 0
             ).astype(int),
         ),
     }
 
     print(
-        f"Walk-forward test | F1: "
-        f"{test_metrics['f1_score'] * 100:.2f}% "
+        f"Walk-forward test | "
+        f"F1: {test_metrics['f1_score'] * 100:.2f}% "
         f"| accuracy: {test_metrics['accuracy'] * 100:.2f}%"
     )
 
     print(
-        f"Baseline always up | F1: "
-        f"{baselines['always_up']['f1_score'] * 100:.2f}% "
+        f"Baseline always up | "
+        f"F1: {baselines['always_up']['f1_score'] * 100:.2f}% "
         f"| accuracy: "
         f"{baselines['always_up']['accuracy'] * 100:.2f}%"
     )
 
     print(
-        "Baseline previous direction | F1: "
-        f"{baselines['previous_day_direction']['f1_score'] * 100:.2f}% "
+        f"Baseline previous direction | "
+        f"F1: {baselines['previous_day_direction']['f1_score'] * 100:.2f}% "
         f"| accuracy: "
         f"{baselines['previous_day_direction']['accuracy'] * 100:.2f}%"
     )
 
-    oos_rows = labeled_df.iloc[validation_end:][["Date"]].copy()
+    oos_rows = labeled_df.iloc[
+        validation_end:
+    ][["Date"]].copy()
+
     oos_rows["prediction"] = oos_predictions
     oos_rows["actual"] = y_test.to_numpy()
 
+    # Huấn luyện mô hình cuối cùng bằng toàn bộ dữ liệu có nhãn.
     final_model = selected_factory()
     final_model.fit(X, y)
 
@@ -601,18 +699,22 @@ def train_and_evaluate():
         "walk_forward": {
             "fold_count": len(folds),
             "step_size": WALK_FORWARD_STEP_SIZE,
-            "train_end_date": labeled_df.iloc[
-                train_end - 1
-            ]["Date"].strftime("%Y-%m-%d"),
-            "validation_end_date": labeled_df.iloc[
-                validation_end - 1
-            ]["Date"].strftime("%Y-%m-%d"),
-            "test_start_date": labeled_df.iloc[
-                validation_end
-            ]["Date"].strftime("%Y-%m-%d"),
-            "test_end_date": labeled_df.iloc[-1][
-                "Date"
-            ].strftime("%Y-%m-%d"),
+            "train_end_date": (
+                labeled_df.iloc[train_end - 1]["Date"]
+                .strftime("%Y-%m-%d")
+            ),
+            "validation_end_date": (
+                labeled_df.iloc[validation_end - 1]["Date"]
+                .strftime("%Y-%m-%d")
+            ),
+            "test_start_date": (
+                labeled_df.iloc[validation_end]["Date"]
+                .strftime("%Y-%m-%d")
+            ),
+            "test_end_date": (
+                labeled_df.iloc[-1]["Date"]
+                .strftime("%Y-%m-%d")
+            ),
             "train_size": train_end,
             "validation_size": validation_end - train_end,
             "test_size": len(y_test),
@@ -630,16 +732,22 @@ def train_and_evaluate():
         "oos_return_predictions": [
             {
                 "date": row.Date.strftime("%Y-%m-%d"),
-                "actual_return_pct": float(row.actual_return_pct),
+                "actual_return_pct": float(
+                    row.actual_return_pct
+                ),
                 "predicted_return_pct": float(
                     row.predicted_return_pct
                 ),
             }
             for row in (
-                labeled_df.iloc[validation_end:][["Date"]]
+                labeled_df.iloc[
+                    validation_end:
+                ][["Date"]]
                 .assign(
                     actual_return_pct=(
-                        next_return.iloc[validation_end:].to_numpy()
+                        next_return.iloc[
+                            validation_end:
+                        ].to_numpy()
                     ),
                     predicted_return_pct=return_oos_predictions,
                 )
@@ -651,12 +759,21 @@ def train_and_evaluate():
 
     os.makedirs(MODEL_DIR, exist_ok=True)
 
+    # Lưu mô hình nguyên tử, tránh file model bị ghi dở.
     with atomic_output_path(MODEL_PATH) as temporary_path:
         with open(temporary_path, "wb") as model_file:
-            pickle.dump(model_payload, model_file)
+            pickle.dump(
+                model_payload,
+                model_file,
+            )
 
-    print(f"\nSaved current prediction model to: {MODEL_PATH}")
-    print("Test metrics are out-of-sample walk-forward results.")
+    print(
+        f"\nSaved current prediction model to: {MODEL_PATH}"
+    )
+
+    print(
+        "Test metrics are out-of-sample walk-forward results."
+    )
 
 
 if __name__ == "__main__":

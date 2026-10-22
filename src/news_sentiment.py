@@ -1,4 +1,3 @@
-
 import re
 from datetime import date, datetime, timedelta, timezone
 from html import unescape
@@ -11,75 +10,119 @@ import requests
 
 CRISIS_KEYWORDS = {
     "high_risk": [
-        "war", "missile", "attack", "invasion", "conflict",
-        "sanctions", "escalation", "nuclear", "bomb",
+        "war",
+        "missile",
+        "attack",
+        "invasion",
+        "conflict",
+        "sanctions",
+        "escalation",
+        "nuclear",
+        "bomb",
     ],
     "medium_risk": [
-        "crisis", "inflation", "fed rate", "recession",
-        "tensions", "tariff", "yield spike",
+        "crisis",
+        "inflation",
+        "fed rate",
+        "recession",
+        "tensions",
+        "tariff",
+        "yield spike",
     ],
     "positive": [
-        "peace", "ceasefire", "deal", "agreement",
-        "growth", "recovery", "soft landing",
+        "peace",
+        "ceasefire",
+        "deal",
+        "agreement",
+        "growth",
+        "recovery",
+        "soft landing",
     ],
 }
 
-GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
-MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
+GOOGLE_NEWS_RSS_URL = (
+    "https://news.google.com/rss/search"
+)
+
+MYMEMORY_TRANSLATE_URL = (
+    "https://api.mymemory.translated.net/get"
+)
+
 MAX_NEWS_ARTICLES = 10
-VIETNAM_TIMEZONE = timezone(timedelta(hours=7))
+
+VIETNAM_TIMEZONE = timezone(
+    timedelta(hours=7)
+)
 
 MONTH_NAMES = (
-    "January|February|March|April|May|June|July|August|September|October|November|December|"
+    "January|February|March|April|May|June|July|"
+    "August|September|October|November|December|"
     "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
 )
 
 HEADLINE_DATE_PATTERNS = (
     re.compile(
-        rf"\b({MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?[,]?\s+(\d{{4}})\b",
+        rf"\b({MONTH_NAMES})\s+(\d{{1,2}})"
+        rf"(?:st|nd|rd|th)?[,]?\s+(\d{{4}})\b",
         re.IGNORECASE,
     ),
-    re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b"),
-    re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),
+    re.compile(
+        r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b"
+    ),
+    re.compile(
+        r"\b(\d{4})-(\d{2})-(\d{2})\b"
+    ),
 )
 
 
 class NewsFetchError(RuntimeError):
-    """Safe, user-facing error for unavailable or invalid RSS responses."""
+    """Lỗi thân thiện khi RSS không khả dụng hoặc dữ liệu không hợp lệ."""
 
 
 class NewsTranslationError(RuntimeError):
-    """Safe, user-facing error for unavailable or invalid translations."""
+    """Lỗi thân thiện khi dịch vụ dịch không khả dụng."""
 
 
 def translate_headline_to_vietnamese(text):
-    """Translate an English headline to Vietnamese using MyMemory."""
+    """Dịch tiêu đề tiếng Anh sang tiếng Việt bằng MyMemory."""
     try:
         response = requests.get(
             MYMEMORY_TRANSLATE_URL,
-            params={"q": text, "langpair": "en|vi"},
+            params={
+                "q": text,
+                "langpair": "en|vi",
+            },
             timeout=(5, 15),
         )
+
         response.raise_for_status()
         result = response.json()
+
     except (requests.RequestException, ValueError):
         raise NewsTranslationError(
             "Không thể dịch tiêu đề tin tức lúc này."
         ) from None
 
-    if not isinstance(result, dict) or result.get("responseStatus") != 200:
+    if (
+        not isinstance(result, dict)
+        or result.get("responseStatus") != 200
+    ):
         raise NewsTranslationError(
             "Dịch vụ dịch không trả về kết quả hợp lệ."
         )
 
     response_data = result.get("responseData")
+
     translated_text = (
         response_data.get("translatedText", "")
         if isinstance(response_data, dict)
         else ""
     )
 
-    if not isinstance(translated_text, str) or not translated_text.strip():
+    if (
+        not isinstance(translated_text, str)
+        or not translated_text.strip()
+    ):
         raise NewsTranslationError(
             "Dịch vụ dịch không trả về kết quả hợp lệ."
         )
@@ -88,62 +131,101 @@ def translate_headline_to_vietnamese(text):
 
 
 def analyze_headline_sentiment(text):
-    """Score a headline using simple risk and positive keyword lists."""
+    """Phân tích tiêu đề bằng từ khóa cảm xúc và rủi ro địa chính trị."""
     text_lower = text.lower()
+
     risk_score = 0
     crisis_flag = 0
 
     for keyword in CRISIS_KEYWORDS["high_risk"]:
-        if re.search(r"\b" + re.escape(keyword) + r"\b", text_lower):
+        if re.search(
+            r"\b" + re.escape(keyword) + r"\b",
+            text_lower,
+        ):
             risk_score += 2.0
             crisis_flag = 1
 
     for keyword in CRISIS_KEYWORDS["medium_risk"]:
-        if re.search(r"\b" + re.escape(keyword) + r"\b", text_lower):
+        if re.search(
+            r"\b" + re.escape(keyword) + r"\b",
+            text_lower,
+        ):
             risk_score += 1.0
 
     positive_score = sum(
         1.0
         for keyword in CRISIS_KEYWORDS["positive"]
-        if re.search(r"\b" + re.escape(keyword) + r"\b", text_lower)
+        if re.search(
+            r"\b" + re.escape(keyword) + r"\b",
+            text_lower,
+        )
     )
 
     return positive_score - risk_score, crisis_flag
 
 
 def _explicit_headline_dates(title):
+    """Tìm ngày tháng được viết trực tiếp trong tiêu đề."""
     for match in HEADLINE_DATE_PATTERNS[0].finditer(title):
         month, day, year = match.groups()
 
         try:
             yield datetime.strptime(
-                f"{month} {day} {year}", "%B %d %Y"
+                f"{month} {day} {year}",
+                "%B %d %Y",
             ).date()
+
         except ValueError:
             try:
                 yield datetime.strptime(
-                    f"{month} {day} {year}", "%b %d %Y"
+                    f"{month} {day} {year}",
+                    "%b %d %Y",
                 ).date()
+
             except ValueError:
                 continue
 
-    for first, second, year in HEADLINE_DATE_PATTERNS[1].findall(title):
-        for month, day in ((second, first), (first, second)):
+    for (
+        month_or_day,
+        day_or_month,
+        year,
+    ) in HEADLINE_DATE_PATTERNS[1].findall(title):
+        for month, day in (
+            (day_or_month, month_or_day),
+            (month_or_day, day_or_month),
+        ):
             try:
-                yield date(int(year), int(month), int(day))
+                yield date(
+                    int(year),
+                    int(month),
+                    int(day),
+                )
                 break
+
             except ValueError:
                 continue
 
-    for year, month, day in HEADLINE_DATE_PATTERNS[2].findall(title):
+    for (
+        year,
+        month,
+        day,
+    ) in HEADLINE_DATE_PATTERNS[2].findall(title):
         try:
-            yield date(int(year), int(month), int(day))
+            yield date(
+                int(year),
+                int(month),
+                int(day),
+            )
+
         except ValueError:
             continue
 
 
-def parse_google_news_rss(xml_content, reference_date=None):
-    """Parse Google News RSS XML into scored headlines."""
+def parse_google_news_rss(
+    xml_content,
+    reference_date=None,
+):
+    """Phân tích RSS XML của Google News thành danh sách tiêu đề."""
     root = ElementTree.fromstring(xml_content)
     news_details = []
 
@@ -153,36 +235,54 @@ def parse_google_news_rss(xml_content, reference_date=None):
     )
 
     for item in root.findall("./channel/item"):
-        title = (item.findtext("title") or "").strip()
+        title = (
+            item.findtext("title") or ""
+        ).strip()
 
         if not title:
             continue
 
+        # Bỏ qua tiêu đề có ngày tương lai được ghi trực tiếp.
         if any(
             headline_date > reference_date
             for headline_date in _explicit_headline_dates(title)
         ):
             continue
 
-        source = (item.findtext("source") or "").strip()
-        article_url = (item.findtext("link") or "").strip()
+        source = (
+            item.findtext("source") or ""
+        ).strip()
 
-        if urlparse(article_url).scheme not in {"http", "https"}:
+        article_url = (
+            item.findtext("link") or ""
+        ).strip()
+
+        if urlparse(article_url).scheme not in {
+            "http",
+            "https",
+        }:
             article_url = ""
 
-        published_text = (item.findtext("pubDate") or "").strip()
+        published_text = (
+            item.findtext("pubDate") or ""
+        ).strip()
+
         published_at = "Unknown"
 
         if published_text:
-            published_datetime = parsedate_to_datetime(
-                published_text
-            ).astimezone(VIETNAM_TIMEZONE)
+            published_datetime = (
+                parsedate_to_datetime(
+                    published_text
+                ).astimezone(VIETNAM_TIMEZONE)
+            )
 
             published_at = published_datetime.strftime(
                 "%Y-%m-%d %H:%M ICT (UTC+7)"
             )
 
-        sentiment, crisis_flag = analyze_headline_sentiment(title)
+        sentiment, crisis_flag = (
+            analyze_headline_sentiment(title)
+        )
 
         news_details.append({
             "title": title,
@@ -208,15 +308,21 @@ def parse_google_news_rss(xml_content, reference_date=None):
     )
 
     news_details = news_details[:MAX_NEWS_ARTICLES]
+
     total_sentiment = sum(
-        item["sentiment"] for item in news_details
+        item["sentiment"]
+        for item in news_details
     )
+
     crisis_count = sum(
-        item["is_crisis"] for item in news_details
+        item["is_crisis"]
+        for item in news_details
     )
 
     return {
-        "avg_sentiment": total_sentiment / len(news_details),
+        "avg_sentiment": (
+            total_sentiment / len(news_details)
+        ),
         "crisis_flag": int(crisis_count > 0),
         "crisis_count": crisis_count,
         "news_list": news_details,
@@ -225,27 +331,38 @@ def parse_google_news_rss(xml_content, reference_date=None):
 
 
 def get_latest_news_sentiment():
-    """Fetch current gold and macroeconomic headlines."""
+    """Lấy tin mới nhất về vàng và kinh tế vĩ mô từ Google News RSS."""
     try:
         response = requests.get(
             GOOGLE_NEWS_RSS_URL,
             params={
-                "q": "gold price OR gold market OR Federal Reserve OR inflation",
+                "q": (
+                    "gold price OR gold market OR "
+                    "Federal Reserve OR inflation"
+                ),
                 "hl": "en-US",
                 "gl": "US",
                 "ceid": "US:en",
             },
             timeout=(5, 15),
         )
+
         response.raise_for_status()
-        return parse_google_news_rss(response.content)
+
+        return parse_google_news_rss(
+            response.content
+        )
 
     except requests.RequestException:
         raise NewsFetchError(
-            "Không thể kết nối Google News RSS. Vui lòng thử lại sau."
+            "Không thể kết nối Google News RSS. "
+            "Vui lòng thử lại sau."
         ) from None
 
-    except (ElementTree.ParseError, ValueError):
+    except (
+        ElementTree.ParseError,
+        ValueError,
+    ):
         raise NewsFetchError(
             "Google News RSS trả về dữ liệu không hợp lệ "
             "hoặc không có tiêu đề."
@@ -256,17 +373,21 @@ if __name__ == "__main__":
     result = get_latest_news_sentiment()
 
     print(f"Source: {result['source']}")
+
     print(
         "Average headline sentiment: "
         f"{result['avg_sentiment']:.2f}"
     )
+
     print(
         "Headlines containing high-risk terms: "
-        f"{result['crisis_count']}/{len(result['news_list'])}"
+        f"{result['crisis_count']}/"
+        f"{len(result['news_list'])}"
     )
 
     for article in result["news_list"]:
         print(
             f"{article['published_at']} | "
-            f"{article['source']} | {article['title']}"
+            f"{article['source']} | "
+            f"{article['title']}"
         )
