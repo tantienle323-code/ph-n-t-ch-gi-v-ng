@@ -1113,8 +1113,13 @@ with tab3:
             fig_cm.update_layout(height=380)
             style_chart(fig_cm)
             st.plotly_chart(fig_cm, width="stretch")
+   
     else:
-        st.info("Chưa có mô hình. Chạy `python src/train.py` để huấn luyện và lưu mô hình.")import os
+        st.info(
+            "Chưa có mô hình. Chạy `python src/train.py` "
+            "để huấn luyện và lưu mô hình."
+        )
+import os
 import pickle
 import pandas as pd
 import numpy as np
