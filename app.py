@@ -1205,7 +1205,7 @@ def style_chart(fig):
 # Refresh the browser periodically while the dashboard is open. A separate
 # worker/OS scheduler can refresh data even when no browser is connected.
 if st_autorefresh is not None:
-    st_autorefresh(interval=15 * 60 * 1000, key="gold_market_page_refresh")
+   st_autorefresh(interval=15 * 60 * 1000, key="gold_market_page_refresh_2")
 
 try:
     AUTO_REFRESH_INTERVAL_MINUTES = max(
@@ -1390,7 +1390,7 @@ st.sidebar.markdown("### MARKET DESK")
 st.sidebar.caption("GOLD · QUANT ANALYTICS")
 st.sidebar.divider()
 st.sidebar.subheader("Bảng điều khiển")
-if st.sidebar.button("↻ Cập nhật dữ liệu thị trường", use_container_width=True):
+if st.sidebar.button("🔄 Cập nhật dữ liệu thị trường", use_container_width=True, key="update_market_data_btn"):
     try:
         with st.spinner("Đang tải dữ liệu, kiểm tra thay đổi và cập nhật mô hình nếu có dữ liệu mới..."):
             manual_status = run_refresh_if_due(
@@ -1429,33 +1429,32 @@ num_days = st.sidebar.slider(
     min_value=1,
     max_value=len(df),
     value=min(180, len(df)),
+    key="num_days_slider"
 )
 
 st.sidebar.subheader("Theo dõi rủi ro")
-enable_layer1 = st.sidebar.checkbox("Cảnh báo biến động", value=True)
-enable_layer2 = st.sidebar.checkbox("Điều chỉnh vị thế theo biến động", value=True)
-enable_layer3 = st.sidebar.checkbox("Phân tích tin tức", value=True)
+enable_layer1 = st.sidebar.checkbox("Cảnh báo biến động", value=True, key="chk_volatility_warning")
+enable_layer2 = st.sidebar.checkbox("Điều chỉnh vị thế theo biến động", value=True, key="chk_layer2_position")
 
 st.sidebar.subheader("Cảnh báo Telegram")
 telegram_direction_filter = st.sidebar.selectbox(
     "Cho phép gửi hướng",
     ['Tất cả', 'Chỉ tín hiệu tăng', 'Chỉ tín hiệu giảm'],
-    key='telegram_direction_filter',
+    key='telegram_direction_filter_1440',
 )
 telegram_min_confidence = st.sidebar.slider(
     "Tin cậy tối thiểu để gửi (%)",
     min_value=50,
-    max_value=95,
-    value=60,
-    step=5,
-    key='telegram_min_confidence',
+    max_value=100,
+    value=70,
+    key='telegram_min_confidence_1445'
 )
 st.sidebar.caption("Chỉ gửi khi bạn chủ động bấm nút; ứng dụng không tự gửi tin.")
 
 st.sidebar.subheader("Chỉ báo trên biểu đồ")
-show_sma = st.sidebar.checkbox("Đường trung bình SMA", value=True)
-show_bb = st.sidebar.checkbox("Dải Bollinger", value=True)
-show_daily_vol = st.sidebar.checkbox("Lợi suất hàng ngày", value=True)
+show_sma = st.sidebar.checkbox("Đường trung bình SMA", value=True, key="chk_show_sma_1455")
+show_ema = st.sidebar.checkbox("Đường trung bình EMA", value=True, key="chk_show_ema_1456")
+show_rsi = st.sidebar.checkbox("Chỉ báo RSI", value=True, key="chk_show_rsi_1457")
 
 df_view = df.tail(num_days).copy()
 forecast_history = pd.DataFrame()
@@ -1565,9 +1564,8 @@ with tab1:
                 f"{telegram_min_confidence}%."
             )
         if st.button(
-            "Gửi tín hiệu này qua Telegram",
-            key="send_telegram_signal",
-            disabled=not (direction_allowed and confidence_allowed),
+    "Tên nút bấm",
+    key="send_telegram_signal_1568"
         ):
             from src.telegram_bot import send_telegram_message
 
@@ -1609,7 +1607,7 @@ with tab1:
 
     if enable_layer3:
         st.subheader("Tin tức & rủi ro địa chính trị")
-        if st.button("Làm mới tin tức", key="refresh_news"):
+        if st.button("Làm mới tin tức", key="refresh_news_1610"):
             st.session_state['news_refresh_key'] = st.session_state.get('news_refresh_key', 0) + 1
         refresh_key = st.session_state.get('news_refresh_key', 0)
         try:
@@ -1666,7 +1664,7 @@ with tab1:
 
     fig.update_layout(xaxis_title="Ngày giao dịch", yaxis_title="USD / oz", hovermode="x unified", height=440)
     style_chart(fig)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch")  
 
     if show_daily_vol and 'Daily_Return_Pct' in df_view.columns:
         st.subheader("Lợi suất theo phiên")
