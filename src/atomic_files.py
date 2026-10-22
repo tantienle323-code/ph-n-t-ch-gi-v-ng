@@ -1,3 +1,4 @@
+
 import os
 import tempfile
 from contextlib import contextmanager
@@ -9,12 +10,14 @@ def atomic_output_path(destination):
     """Yield a unique same-directory temporary path and atomically publish it."""
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
+
     descriptor, temporary_path = tempfile.mkstemp(
-        prefix=f'.{destination.name}.',
-        suffix='.tmp',
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
         dir=destination.parent,
     )
     os.close(descriptor)
+
     try:
         yield temporary_path
         os.replace(temporary_path, destination)
