@@ -1664,7 +1664,7 @@ with tab1:
 
     fig.update_layout(xaxis_title="Ngày giao dịch", yaxis_title="USD / oz", hovermode="x unified", height=440)
     style_chart(fig)
-    st.plotly_chart(fig, width="stretch")  
+    st.plotly_chart(fig, width="stretch", key="chart_main_view")   
 
     if show_daily_vol and 'Daily_Return_Pct' in df_view.columns:
         st.subheader("Lợi suất theo phiên")
