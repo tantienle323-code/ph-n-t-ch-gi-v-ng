@@ -11,6 +11,32 @@ from src.auto_refresh import (
 
 
 class TestAutomaticRefresh(unittest.TestCase):
+    def test_daily_refresh_is_not_due_before_24_hours(self):
+        now = datetime(
+            2026, 10, 21, 0, 0,
+            tzinfo=timezone.utc,
+        )
+        status = {
+            "last_attempt_utc": (
+                now - timedelta(hours=23, minutes=59)
+            ).isoformat()
+        }
+
+        self.assertFalse(
+            refresh_due(status, 24 * 60, now=now)
+        )
+        self.assertTrue(
+            refresh_due(
+                {
+                    "last_attempt_utc": (
+                        now - timedelta(days=1)
+                    ).isoformat()
+                },
+                24 * 60,
+                now=now,
+            )
+        )
+
     def test_refresh_is_due_without_previous_status(self):
         self.assertTrue(refresh_due({}, 60))
 

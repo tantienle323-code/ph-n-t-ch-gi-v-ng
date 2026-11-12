@@ -35,7 +35,7 @@ def preprocess_gold_frame(df):
     )
 
     # 1. Đặc trưng lịch.
-    df["DayOfWeek"] = df["Date"].dt.dayofweek
+    df["DayOfWeek"] = df["Date"].dt.day_of_week
     df["Month"] = df["Date"].dt.month
 
     # 2. Biến động giá hằng ngày.

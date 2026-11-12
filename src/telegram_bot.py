@@ -112,7 +112,7 @@ def build_signal_message(
     direction = (
         "TĂNG"
         if prediction == 1
-        else "GIẢM"
+        else "KHÔNG TĂNG"
     )
 
     rsi = latest_row.get("RSI_14")
@@ -128,7 +128,8 @@ def build_signal_message(
         f"Giá hiện tại: ${latest_row['Close']:,.2f} USD/Oz\n"
         f"RSI(14): {rsi_text}\n"
         f"Dự báo phiên tới: {direction}\n"
-        f"Độ tin cậy của mô hình: {probability:.1f}%\n\n"
+        f"Điểm xác suất lớp dự báo: {probability:.1f}%\n"
+        "Điểm predict_proba chưa được hiệu chuẩn.\n\n"
         "Chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
     )
 

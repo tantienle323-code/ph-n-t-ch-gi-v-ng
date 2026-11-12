@@ -1,7 +1,7 @@
 {
   "status": "success",
-  "last_attempt_utc": "2026-10-29T12:00:53.690198+00:00",
+  "last_attempt_utc": "2026-11-12T07:35:10.887012+00:00",
   "message": "Đã tải dữ liệu mới, tính lại chỉ báo và huấn luyện lại mô hình.",
-  "last_success_utc": "2026-10-29T12:00:53.690198+00:00",
+  "last_success_utc": "2026-11-12T07:35:10.887012+00:00",
   "changed": true
 }

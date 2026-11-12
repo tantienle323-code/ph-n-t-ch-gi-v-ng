@@ -9,6 +9,8 @@ from typing import Callable, Any
 from src.atomic_files import atomic_output_path
 from src.market_refresh import market_data_refresh_lock
 
+DEFAULT_REFRESH_INTERVAL_MINUTES = 24 * 60
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -101,7 +103,7 @@ def run_refresh_if_due(
     refresh_callback: Callable[
         [], dict[str, Any] | None
     ],
-    interval_minutes: int = 60,
+    interval_minutes: int = DEFAULT_REFRESH_INTERVAL_MINUTES,
     force: bool = False,
 ) -> dict[str, Any]:
     """Chỉ cập nhật khi đến hạn, dùng khóa chung giữa các tiến trình.

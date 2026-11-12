@@ -36,3 +36,16 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+## Tự động cập nhật hằng ngày
+
+Mặc định ứng dụng kiểm tra và làm mới dữ liệu sau mỗi 24 giờ (1440 phút).
+Khi dashboard mở, trình duyệt sẽ kiểm tra lịch này định kỳ. Nếu muốn cập nhật
+kể cả khi không mở dashboard, hãy cấu hình Windows Task Scheduler chạy mỗi ngày:
+
+- **Program/script:** đường dẫn `python.exe` của môi trường ảo.
+- **Arguments:** `scripts\auto_refresh.py --once`
+- **Start in:** thư mục gốc của dự án.
+
+Có thể đổi chu kỳ bằng biến môi trường `GOLD_AUTO_REFRESH_MINUTES` (đơn vị phút).

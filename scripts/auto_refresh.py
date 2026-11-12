@@ -1,7 +1,7 @@
 """Automatic market refresh worker.
 
 Run once (for Task Scheduler/cron): python scripts/auto_refresh.py --once
-Run continuously: python scripts/auto_refresh.py --interval-minutes 60
+Run continuously: python scripts/auto_refresh.py --interval-minutes 1440
 """
 from __future__ import annotations
 
@@ -14,7 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.auto_refresh import run_refresh_if_due, read_refresh_status
+from src.auto_refresh import (
+    DEFAULT_REFRESH_INTERVAL_MINUTES,
+    run_refresh_if_due,
+)
 from src.refresh_pipeline import refresh_market_data
 
 
@@ -22,7 +25,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Tự động cập nhật dữ liệu vàng."
     )
-    parser.add_argument("--interval-minutes", type=int, default=60)
+    parser.add_argument(
+        "--interval-minutes",
+        type=int,
+        default=DEFAULT_REFRESH_INTERVAL_MINUTES,
+    )
     parser.add_argument(
         "--once",
         action="store_true",
