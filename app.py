@@ -246,6 +246,11 @@ data_status_label = {
     'error': 'DỮ LIỆU CÓ LỖI',
 }[data_health['status']]
 data_status_class = 'market-live' if data_health['status'] == 'ready' else 'market-stale'
+# Số ngày lịch thực tế từ phiên mới nhất đến hôm nay. Header phải hiện
+# cả con số này: chỉ hiện "trễ N ngày làm việc" sẽ cho ra "trễ 0" vào
+# cuối tuần (ví dụ phiên Thứ Sáu, xem vào Chủ Nhật) và trông như dữ
+# liệu trùng thời gian thực trong khi đã cách 2 ngày lịch.
+calendar_age_days = data_health.get('calendar_age_days') or 0
 st.html(f"""
 <div class="market-header">
   <div class="market-brand">
@@ -259,7 +264,7 @@ st.html(f"""
   <div class="market-meta">
     <div><span class="{data_status_class}">● {data_status_label}</span></div>
     <div>Phiên dữ liệu mới nhất &nbsp; <strong>{latest_row['Date']:%d/%m/%Y}</strong></div>
-    <div>{data_health['row_count']:,} dòng · trễ {data_health['business_days_lag']} ngày làm việc</div>
+    <div>{data_health['row_count']:,} dòng · trễ {data_health['business_days_lag']} ngày làm việc · cách {calendar_age_days} ngày lịch</div>
   </div>
 </div>
 """)
@@ -270,8 +275,8 @@ if data_health['status'] == 'error':
     )
 elif data_health['status'] == 'stale':
     st.warning("Dữ liệu đã trễ hơn 5 ngày làm việc. Hãy cập nhật trước khi dùng tín hiệu.")
-elif data_health['calendar_age_days'] and data_health['calendar_age_days'] >= 3:
-    st.info("Thị trường có thể nghỉ cuối tuần/ngày lễ; hãy đối chiếu ngày phiên mới nhất.")
+elif data_health['calendar_age_days'] and data_health['calendar_age_days'] >= 2:
+    st.info("Phiên mới nhất cách hôm nay từ 2 ngày lịch trở lên — thường là do thị trường nghỉ cuối tuần/ngày lễ; hãy đối chiếu ngày phiên mới nhất.")
 
 # SIDEBAR
 st.sidebar.markdown("### MARKET DESK")
