@@ -337,7 +337,7 @@ enable_layer3 = st.sidebar.checkbox("Phân tích tin tức", value=True)
 st.sidebar.subheader("Cảnh báo Telegram")
 telegram_direction_filter = st.sidebar.selectbox(
     "Cho phép gửi hướng",
-    ['Tất cả', 'Chỉ tín hiệu tăng', 'Chỉ tín hiệu không tăng'],
+    ['Tất cả', 'Chỉ tín hiệu tăng', 'Chỉ tín hiệu giảm'],
     key='telegram_direction_filter_v2',
 )
 telegram_min_confidence = st.sidebar.slider(
@@ -438,7 +438,7 @@ with tab1:
                 ),
             },
         )
-        direction = "TĂNG" if pred == 1 else "KHÔNG TĂNG"
+        direction = "TĂNG" if pred == 1 else "GIẢM"
         signal_text = (
             f"Tín hiệu mô hình: {direction} · "
             f"xác suất lớp dự báo {proba:.1f}%"
@@ -447,6 +447,11 @@ with tab1:
             st.success(signal_text)
         else:
             st.error(signal_text)
+        st.caption(
+            "Mô hình phân lớp 2 lớp: GIẢM nghĩa là dự báo giá đóng cửa "
+            "phiên tới không cao hơn phiên này (giảm hoặc đi ngang; "
+            "đi ngang gần như không xảy ra với giá vàng)."
+        )
         if return_is_baseline:
             st.metric(
                 "Giá đóng cửa ước tính phiên tới",
@@ -458,7 +463,7 @@ with tab1:
                 "'No change' trên tập validation, nên hệ thống đang dùng "
                 "dự báo lợi suất 0% của baseline: giá ước tính bằng đúng "
                 "giá hiện tại, đây KHÔNG phải giá do mô hình hồi quy dự "
-                "báo. Chỉ tín hiệu TĂNG / KHÔNG TĂNG ở trên là từ mô "
+                "báo. Chỉ tín hiệu TĂNG / GIẢM ở trên là từ mô "
                 "hình phân lớp."
             )
         else:
@@ -477,13 +482,13 @@ with tab1:
             "Độ rộng lấy từ sai số validation; không phải mức giá đảm bảo."
         )
         st.caption(
-            "Xác suất tăng/không tăng là điểm predict_proba chưa hiệu chuẩn; "
+            "Xác suất tăng/giảm là điểm predict_proba chưa hiệu chuẩn; "
             "không nên hiểu là xác suất chính xác ngoài thực tế."
         )
         direction_allowed = (
             telegram_direction_filter == 'Tất cả'
             or (telegram_direction_filter == 'Chỉ tín hiệu tăng' and pred == 1)
-            or (telegram_direction_filter == 'Chỉ tín hiệu không tăng' and pred == 0)
+            or (telegram_direction_filter == 'Chỉ tín hiệu giảm' and pred == 0)
         )
         confidence_allowed = proba >= telegram_min_confidence
         if not direction_allowed:
@@ -1047,7 +1052,7 @@ with tab3:
                 f"{tracking['pending_count']} dự báo đang chờ dữ liệu giá của phiên kế tiếp."
             )
         if tracking['forecast_count']:
-            direction_names = {0: 'KHÔNG TĂNG', 1: 'TĂNG'}
+            direction_names = {0: 'GIẢM', 1: 'TĂNG'}
             display_history = tracking['latest_history'].sort_values(
                 'forecast_date',
                 ascending=False,
@@ -1166,7 +1171,7 @@ with tab3:
         with col_m2:
             st.markdown("**Ma trận nhầm lẫn**")
             cm = np.array(metrics['confusion_matrix'])
-            fig_cm = px.imshow(cm, text_auto=True, x=['Dự báo KHÔNG TĂNG', 'Dự báo TĂNG'], y=['Thực tế KHÔNG TĂNG', 'Thực tế TĂNG'], color_continuous_scale='Blues')
+            fig_cm = px.imshow(cm, text_auto=True, x=['Dự báo GIẢM', 'Dự báo TĂNG'], y=['Thực tế GIẢM', 'Thực tế TĂNG'], color_continuous_scale='Blues')
             fig_cm.update_layout(height=380)
             style_chart(fig_cm)
             st.plotly_chart(fig_cm, width="stretch")
