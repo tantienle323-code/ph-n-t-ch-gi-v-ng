@@ -1053,7 +1053,10 @@ with tab3:
                 ascending=False,
             ).head(20).copy()
             display_history['Dự báo'] = display_history['predicted_direction'].map(direction_names)
-            display_history['Thực tế'] = display_history['actual_direction'].map(direction_names)
+            # Dự báo đang chờ phiên kế chưa có actual_direction (NaN):
+            # map() cho NaN thì bảng hiện "None", phải thay bằng nhãn chờ
+            # như các cột lợi suất/giá thực tế ở dưới.
+            display_history['Thực tế'] = display_history['actual_direction'].map(direction_names).fillna('Chờ phiên kế')
             display_history['Điểm xác suất'] = display_history['confidence'].map(
                 lambda value: f"{value * 100:.1f}%"
             )
