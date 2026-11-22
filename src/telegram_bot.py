@@ -112,7 +112,7 @@ def build_signal_message(
     direction = (
         "TĂNG"
         if prediction == 1
-        else "KHÔNG TĂNG"
+        else "GIẢM"
     )
 
     rsi = latest_row.get("RSI_14")
