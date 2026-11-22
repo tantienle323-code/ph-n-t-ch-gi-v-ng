@@ -246,6 +246,11 @@ data_status_label = {
     'error': 'DỮ LIỆU CÓ LỖI',
 }[data_health['status']]
 data_status_class = 'market-live' if data_health['status'] == 'ready' else 'market-stale'
+# Số ngày lịch thực tế từ phiên mới nhất đến hôm nay. Header phải hiện
+# cả con số này: chỉ hiện "trễ N ngày làm việc" sẽ cho ra "trễ 0" vào
+# cuối tuần (ví dụ phiên Thứ Sáu, xem vào Chủ Nhật) và trông như dữ
+# liệu trùng thời gian thực trong khi đã cách 2 ngày lịch.
+calendar_age_days = data_health.get('calendar_age_days') or 0
 st.html(f"""
 <div class="market-header">
   <div class="market-brand">
@@ -259,7 +264,7 @@ st.html(f"""
   <div class="market-meta">
     <div><span class="{data_status_class}">● {data_status_label}</span></div>
     <div>Phiên dữ liệu mới nhất &nbsp; <strong>{latest_row['Date']:%d/%m/%Y}</strong></div>
-    <div>{data_health['row_count']:,} dòng · trễ {data_health['business_days_lag']} ngày làm việc</div>
+    <div>{data_health['row_count']:,} dòng · trễ {data_health['business_days_lag']} ngày làm việc · cách {calendar_age_days} ngày lịch</div>
   </div>
 </div>
 """)
@@ -270,8 +275,8 @@ if data_health['status'] == 'error':
     )
 elif data_health['status'] == 'stale':
     st.warning("Dữ liệu đã trễ hơn 5 ngày làm việc. Hãy cập nhật trước khi dùng tín hiệu.")
-elif data_health['calendar_age_days'] and data_health['calendar_age_days'] >= 3:
-    st.info("Thị trường có thể nghỉ cuối tuần/ngày lễ; hãy đối chiếu ngày phiên mới nhất.")
+elif data_health['calendar_age_days'] and data_health['calendar_age_days'] >= 2:
+    st.info("Phiên mới nhất cách hôm nay từ 2 ngày lịch trở lên — thường là do thị trường nghỉ cuối tuần/ngày lễ; hãy đối chiếu ngày phiên mới nhất.")
 
 # SIDEBAR
 st.sidebar.markdown("### MARKET DESK")
@@ -392,6 +397,12 @@ with tab1:
         confidence = float(model.predict_proba(input_vector)[0][pred])
         proba = confidence * 100
         return_model = model_payload.get('return_model')
+        # Khi không mô hình hồi quy nào thắng baseline "No change" trên
+        # validation, train.py lưu return_model=None. Khi đó lợi suất dự
+        # báo 0% là của baseline, KHÔNG phải dự báo của mô hình hồi quy,
+        # và giao diện phải nói rõ điều này thay vì trình bày như một
+        # ước tính thật (xem khối hiển thị bên dưới).
+        return_is_baseline = return_model is None
         predicted_return_pct = (
             float(return_model.predict(input_vector)[0])
             if return_model is not None else 0.0
@@ -436,11 +447,26 @@ with tab1:
             st.success(signal_text)
         else:
             st.error(signal_text)
-        st.metric(
-            "Giá đóng cửa ước tính phiên tới",
-            f"${expected_close:,.2f}",
-            f"{predicted_return_pct:+.3f}%",
-        )
+        if return_is_baseline:
+            st.metric(
+                "Giá đóng cửa ước tính phiên tới",
+                f"${expected_close:,.2f}",
+                "baseline No change · lợi suất 0%",
+            )
+            st.warning(
+                "Mô hình hồi quy lợi suất không thắng được baseline "
+                "'No change' trên tập validation, nên hệ thống đang dùng "
+                "dự báo lợi suất 0% của baseline: giá ước tính bằng đúng "
+                "giá hiện tại, đây KHÔNG phải giá do mô hình hồi quy dự "
+                "báo. Chỉ tín hiệu TĂNG / KHÔNG TĂNG ở trên là từ mô "
+                "hình phân lớp."
+            )
+        else:
+            st.metric(
+                "Giá đóng cửa ước tính phiên tới",
+                f"${expected_close:,.2f}",
+                f"{predicted_return_pct:+.3f}%",
+            )
         interval_level = model_payload.get(
             'return_metrics',
             {},
@@ -480,7 +506,12 @@ with tab1:
                 f"Dự báo phiên tới: {direction}\n"
                 f"Độ tin cậy của mô hình: {proba:.1f}%\n"
                 f"Giá đóng cửa ước tính: ${expected_close:,.2f} USD/Oz\n"
-                f"Khoảng ước lượng: ${lower_close:,.2f} - ${upper_close:,.2f} USD/Oz\n"
+                + (
+                    "Lưu ý: giá ước tính theo baseline No change "
+                    "(lợi suất 0%), không phải dự báo của mô hình hồi quy.\n"
+                    if return_is_baseline else ""
+                )
+                + f"Khoảng ước lượng: ${lower_close:,.2f} - ${upper_close:,.2f} USD/Oz\n"
                 "Xác suất phân lớp chưa hiệu chuẩn; khoảng giá không đảm bảo.\n"
                 "Chỉ mang tính tham khảo, không phải khuyến nghị đầu tư."
             )
