@@ -41,8 +41,9 @@ OUTPUT_FILE = os.path.join(BASE_DIR, "gold_data_5y.csv")
 # trong chốc lát (lỗi mạng, giới hạn truy cập, lấy cookie/crumb
 # thất bại). Trước đây code chỉ tải đúng 1 lần rồi bỏ cuộc ngay,
 # nên một lần trượt mạng là cả lần cập nhật bị báo thất bại.
-# Nay tải lại tối đa 4 lần, chờ tăng dần giữa các lần thử,
-# và nếu Ticker.history vẫn rỗng thì thử tiếp bằng yf.download.
+# Nay tải lại tối đa 4 lần, chờ tăng dần giữa các lần thử;
+# mỗi lần thử có 3 cách tải dự phòng cho nhau: Ticker.history,
+# yf.download, và Yahoo Chart API trực tiếp (không cần crumb).
 MAX_ATTEMPTS = 4
 RETRY_DELAYS_SECONDS = (2, 5, 10)
 
@@ -78,8 +79,67 @@ def _normalize_history(data):
     return data
 
 
+def _download_via_chart_api(symbol):
+    """Tải qua Yahoo Chart API trực tiếp bằng requests.
+
+    yfinance phải lấy cookie/crumb trước khi tải, bước đó
+    thỉnh thoảng bị Yahoo chặn (đặc biệt từ IP lạ/máy chủ),
+    khiến cả history lẫn download cùng trượt. Chart API là
+    cổng dữ liệu gốc của Yahoo, không cần crumb, nên thường
+    vẫn vào được khi yfinance đã bó tay.
+    """
+    from urllib.parse import quote
+
+    import requests
+
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        + quote(symbol, safe="")
+        + "?range=5y&interval=1d"
+    )
+
+    response = requests.get(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0 Safari/537.36"
+            )
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+
+    result = response.json()["chart"]["result"][0]
+    quote_data = result["indicators"]["quote"][0]
+
+    # Mốc thời gian Yahoo trả theo giờ sàn giao dịch (cả 5 mã
+    # đều ở sàn Mỹ); đổi về giờ New York rồi bỏ nhãn múi giờ
+    # để khớp định dạng Date của hai cách tải còn lại.
+    dates = (
+        pd.to_datetime(result["timestamp"], unit="s", utc=True)
+        .tz_convert("America/New_York")
+        .tz_localize(None)
+    )
+
+    frame = pd.DataFrame(
+        {
+            "Open": quote_data.get("open"),
+            "High": quote_data.get("high"),
+            "Low": quote_data.get("low"),
+            "Close": quote_data.get("close"),
+            "Volume": quote_data.get("volume"),
+        },
+        index=dates,
+    )
+    frame.index.name = "Date"
+
+    return _normalize_history(frame)
+
+
 def _download_once(symbol):
-    """Tải một mã một lần: thử history trước, download sau."""
+    """Tải một mã một lần: history, rồi download, rồi Chart API."""
     try:
         data = _normalize_history(
             yf.Ticker(symbol).history(period="5y")
@@ -87,6 +147,9 @@ def _download_once(symbol):
         if data is not None:
             return data
     except Exception:
+        # Không để một lần timeout làm sập cả lần cập nhật;
+        # thử cách tải dự phòng ngay bên dưới, rồi vòng lặp
+        # bên ngoài sẽ thử lại nếu cả ba cách đều thất bại.
         pass
 
     try:
@@ -104,6 +167,11 @@ def _download_once(symbol):
     except Exception:
         pass
 
+    try:
+        return _download_via_chart_api(symbol)
+    except Exception:
+        pass
+
     return None
 
 
@@ -118,7 +186,7 @@ def fetch_ticker_history(name, symbol):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             data = _download_once(symbol)
-        except Exception as error:
+        except Exception as error:  # phòng thủ, _download_once đã bắt lỗi
             data = None
             last_error = error
 
