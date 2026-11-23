@@ -1,7 +1,8 @@
 {
-  "status": "no_change",
-  "last_attempt_utc": "2026-11-22T11:44:19.706135+00:00",
-  "message": "Nguồn chưa có dữ liệu mới; giữ nguyên dữ liệu đã xử lý và mô hình.",
+  "status": "error",
+  "last_attempt_utc": "2026-11-23T08:34:37.551422+00:00",
+  "message": "ValueError: Không nhận được dữ liệu hợp lệ cho Gold (GC=F). File cũ được giữ nguyên.",
   "last_success_utc": "2026-11-22T11:44:19.706135+00:00",
-  "changed": false
+  "changed": false,
+  "retry_after_utc": "2026-11-23T08:44:37.551455+00:00"
 }
