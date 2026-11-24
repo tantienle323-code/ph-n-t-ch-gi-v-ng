@@ -16,6 +16,7 @@ from src.auto_refresh import (
 )
 from src.refresh_pipeline import refresh_market_data as run_market_refresh_pipeline
 from src.project_summary import build_project_summary
+from src.live_price import fetch_live_gold
 
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -366,9 +367,63 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Tổng quan đồ án",
 ])
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_live_gold():
+    return fetch_live_gold()
+
+
+def _render_live_gold():
+    """Dải giá vàng trực tiếp ở đầu Tab 1.
+
+    Chỉ phần này tự chạy lại mỗi 60 giây nhờ st.fragment,
+    toàn bộ trang không phải tải lại. Lấy giá tối đa mỗi
+    30 giây qua cache; lấy không được thì báo nhẹ một dòng
+    và phần còn lại của tab vẫn hiển thị giá phiên gần nhất.
+    """
+    live = _cached_live_gold()
+    if live is None:
+        st.caption(
+            "Giá trực tiếp: tạm thời không lấy được — "
+            "đang hiển thị giá phiên gần nhất ở dưới."
+        )
+        return
+
+    live_col, chart_col = st.columns([1, 2])
+    live_col.metric(
+        "Vàng trực tiếp · USD/oz",
+        f"${live['price']:,.2f}",
+        f"{live['change']:+.2f} ({live['change_pct']:+.2f}%)"
+        " so với đóng cửa trước",
+    )
+    if live["quote_time"] is not None:
+        live_col.caption(
+            f"Cập nhật: {live['quote_time']:%H:%M:%S %d/%m/%Y}"
+            f" (giờ VN) · {live['source']} · Nguồn Yahoo có"
+            " thể trễ khoảng 10 phút so với sàn."
+        )
+
+    series = live.get("series")
+    if series is not None and len(series) > 1:
+        fig_live = px.line(series, x="Time", y="Close")
+        fig_live.update_layout(
+            height=140,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis_title=None,
+            yaxis_title=None,
+        )
+        chart_col.plotly_chart(fig_live, use_container_width=True)
+
+
+live_gold_strip = (
+    st.fragment(run_every=60)(_render_live_gold)
+    if hasattr(st, "fragment")
+    else _render_live_gold
+)
+
 # ================= TAB 1 =================
 with tab1:
     st.caption("MARKET SNAPSHOT")
+    live_gold_strip()
     col1, col2 = st.columns(2)
     
     prev_close = df.iloc[-2]['Close'] if len(df) > 1 else latest_row['Close']
