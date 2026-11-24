@@ -737,10 +737,10 @@ live_sjc_strip = (
 # ================= TAB 4: VIETNAM SJC QUOTES =================
 with tab4:
     st.subheader("Giá vàng miếng SJC Việt Nam")
-    live_sjc_strip()
+        live_sjc_strip()
 st.caption(
         "Khối trực tiếp phía trên tự động lấy giá từ bảng giá PNJ (dự phòng: vang.today). "
-                "Phần lịch sử phía dưới dùng tệp CSV do bạn cung cấp. Hãy xác minh nguồn và thời điểm cập nhật."
+                    "Phần lịch sử phía dưới dùng tệp CSV do bạn cung cấp. Hãy xác minh nguồn và thời điểm cập nhật."
 )
     st.markdown(
         "Tệp CSV cần các cột `Date`, `Buy_VND_per_luong`, `Sell_VND_per_luong`, `Source`. "
