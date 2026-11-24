@@ -426,13 +426,13 @@ with tab1:
     st.caption("MARKET SNAPSHOT")
     live_gold_strip()
     col1, col2 = st.columns(2)
-    
+
     prev_close = df.iloc[-2]['Close'] if len(df) > 1 else latest_row['Close']
     diff = latest_row['Close'] - prev_close
     pct = (diff / prev_close) * 100 if prev_close else 0.0
-    
+
     col1.metric("Vàng · USD/oz", f"${latest_row['Close']:,.2f}", f"{diff:+.2f} ({pct:+.2f}%)")
-    
+
     if 'USD_Index' in latest_row:
         dxy_ret = latest_row.get('USD_Index_Return', 0.0)*100
         col2.metric("USD Index", f"{latest_row['USD_Index']:.2f}", f"{dxy_ret:+.2f}%")
@@ -440,7 +440,7 @@ with tab1:
     col3, col4 = st.columns(2)
     if 'US10Y_Yield' in latest_row:
         col3.metric("Lợi suất 10Y", f"{latest_row['US10Y_Yield']:.2f}%")
-        
+
     daily_range = latest_row.get('Daily_Range_USD', 0.0)
     col4.metric("Biên độ phiên", f"${daily_range:.2f}", f"{latest_row.get('Daily_Range_Pct', 0.0):.2f}%")
 
@@ -592,7 +592,7 @@ with tab1:
     if enable_layer1:
         current_vol = latest_row.get('Volatility_20_Ann', 0.0)
         vol_spike = latest_row.get('Volatility_Spike_Flag', 0)
-        
+
         if vol_spike == 1 or current_vol > 20.0:
             st.error("**RỦI RO BIẾN ĐỘNG CAO**\n\n"
                      f"Biến động thường niên: `{current_vol:.1f}%`. "
@@ -648,12 +648,12 @@ with tab1:
     st.subheader("Giá vàng và chỉ báo kỹ thuật")
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['Close'], mode='lines', name='Giá đóng cửa', line=dict(color='#F2C14E', width=2.4)))
-    
+
     if show_sma:
         for col_name, color in [('SMA_7', '#3B82F6'), ('SMA_14', '#8B5CF6'), ('SMA_50', '#EF4444'), ('SMA_200', '#10B981')]:
             if col_name in df_view.columns:
                 fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view[col_name], mode='lines', name=col_name, line=dict(color=color, width=1)))
-                
+
     if show_bb and 'BB_Upper' in df_view.columns and 'BB_Lower' in df_view.columns:
         fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['BB_Upper'], mode='lines', name='BB Upper', line=dict(color='#9CA3AF', dash='dash')))
         fig.add_trace(go.Scatter(x=df_view['Date'], y=df_view['BB_Lower'], mode='lines', name='BB Lower', line=dict(color='#9CA3AF', dash='dash')))
@@ -680,11 +680,11 @@ with tab1:
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_live_sjc():
     return fetch_live_sjc()
-    
-    
+
+
 def _render_live_sjc():
     """Khối giá SJC trực tiếp ở đầu Tab 4.
-    
+
     Tự chạy lại mỗi 60 giây nhờ st.fragment như dải giá
     trực tiếp ở Tab 1; lấy giá tối đa mỗi 60 giây qua
     cache. Không lấy được thì báo nhẹ một dòng, phần
@@ -710,7 +710,7 @@ def _render_live_sjc():
     spread_col.metric(
         "Chênh lệch mua–bán", f"{live['spread']:,.0f} ₫"
     )
-    
+
     if live["quote_time"] is not None:
         time_text = (
             f"Báo giá lúc {live['quote_time']:%H:%M %d/%m/%Y}"
@@ -737,11 +737,11 @@ live_sjc_strip = (
 # ================= TAB 4: VIETNAM SJC QUOTES =================
 with tab4:
     st.subheader("Giá vàng miếng SJC Việt Nam")
-        live_sjc_strip()
-st.caption(
+    live_sjc_strip()
+    st.caption(
         "Khối trực tiếp phía trên tự động lấy giá từ bảng giá PNJ (dự phòng: vang.today). "
-                    "Phần lịch sử phía dưới dùng tệp CSV do bạn cung cấp. Hãy xác minh nguồn và thời điểm cập nhật."
-)
+        "Phần lịch sử phía dưới dùng tệp CSV do bạn cung cấp. Hãy xác minh nguồn và thời điểm cập nhật."
+    )
     st.markdown(
         "Tệp CSV cần các cột `Date`, `Buy_VND_per_luong`, `Sell_VND_per_luong`, `Source`. "
         "Ngày dùng định dạng YYYY-MM-DD; giá tính bằng VND/lượng."
@@ -1241,7 +1241,7 @@ with tab3:
                 mime='text/csv',
                 width='stretch',
             )
-        
+
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Accuracy", f"{metrics['accuracy']*100:.2f}%")
         m2.metric("Precision", f"{metrics['precision']*100:.2f}%")
@@ -1266,7 +1266,7 @@ with tab3:
                     "F1 của mô hình hiện thấp hơn baseline luôn dự báo tăng. "
                     "Cần cải thiện và kiểm định thêm trước khi xem tín hiệu là có lợi thế."
                 )
-        
+
         st.divider()
         col_m1, col_m2 = st.columns(2)
         with col_m1:
@@ -1289,7 +1289,7 @@ with tab3:
             fig_cm.update_layout(height=380)
             style_chart(fig_cm)
             st.plotly_chart(fig_cm, width="stretch")
-   
+
     else:
         st.info(
             "Chưa có mô hình. Chạy `python src/train.py` "
