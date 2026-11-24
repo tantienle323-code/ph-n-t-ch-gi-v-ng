@@ -17,6 +17,7 @@ from src.auto_refresh import (
 from src.refresh_pipeline import refresh_market_data as run_market_refresh_pipeline
 from src.project_summary import build_project_summary
 from src.live_price import fetch_live_gold
+from src.sjc_live import fetch_live_sjc
 
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -676,13 +677,71 @@ with tab1:
         mime="text/csv",
     )
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_live_sjc():
+    return fetch_live_sjc()
+    
+    
+def _render_live_sjc():
+    """Khối giá SJC trực tiếp ở đầu Tab 4.
+    
+    Tự chạy lại mỗi 60 giây nhờ st.fragment như dải giá
+    trực tiếp ở Tab 1; lấy giá tối đa mỗi 60 giây qua
+    cache. Không lấy được thì báo nhẹ một dòng, phần
+    lịch sử CSV bên dưới vẫn hiển thị bình thường.
+    """
+    st.subheader("Giá SJC trực tiếp")
+    live = _cached_live_sjc()
+    if live is None:
+        st.caption(
+            "Giá trực tiếp: tạm thời không lấy được từ nguồn"
+            " trực tuyến — hãy xem báo giá gần nhất trong"
+            " phần lịch sử bên dưới."
+        )
+        return
+
+    buy_col, sell_col, spread_col = st.columns(3)
+    buy_col.metric(
+        "SJC mua vào (trực tiếp)", f"{live['buy']:,.0f} ₫/lượng"
+    )
+    sell_col.metric(
+        "SJC bán ra (trực tiếp)", f"{live['sell']:,.0f} ₫/lượng"
+    )
+    spread_col.metric(
+        "Chênh lệch mua–bán", f"{live['spread']:,.0f} ₫"
+    )
+    
+    if live["quote_time"] is not None:
+        time_text = (
+            f"Báo giá lúc {live['quote_time']:%H:%M %d/%m/%Y}"
+        )
+    else:
+        time_text = (
+            f"Lấy lúc {live['fetched_at']:%H:%M:%S %d/%m/%Y}"
+        )
+    st.caption(
+        f"{time_text} (giờ VN) · Nguồn: {live['source']} · "
+        "Tự làm mới mỗi 60 giây. Giá SJC là giá niêm yết của"
+        " doanh nghiệp, chỉ đổi khi doanh nghiệp cập nhật"
+        " bảng giá."
+    )
+
+
+live_sjc_strip = (
+    st.fragment(run_every=60)(_render_live_sjc)
+    if hasattr(st, "fragment")
+    else _render_live_sjc
+)
+
+
 # ================= TAB 4: VIETNAM SJC QUOTES =================
 with tab4:
     st.subheader("Giá vàng miếng SJC Việt Nam")
-    st.caption(
-        "Giá SJC được nhập từ tệp CSV do bạn cung cấp. Ứng dụng không tự giả lập "
-        "giá SJC và chưa kết nối nguồn báo giá trực tiếp. Hãy xác minh nguồn và thời điểm cập nhật."
-    )
+    live_sjc_strip()
+st.caption(
+        "Khối trực tiếp phía trên tự động lấy giá từ bảng giá PNJ (dự phòng: vang.today). "
+                "Phần lịch sử phía dưới dùng tệp CSV do bạn cung cấp. Hãy xác minh nguồn và thời điểm cập nhật."
+)
     st.markdown(
         "Tệp CSV cần các cột `Date`, `Buy_VND_per_luong`, `Sell_VND_per_luong`, `Source`. "
         "Ngày dùng định dạng YYYY-MM-DD; giá tính bằng VND/lượng."
