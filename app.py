@@ -18,13 +18,18 @@ from src.refresh_pipeline import refresh_market_data as run_market_refresh_pipel
 from src.project_summary import build_project_summary
 from src.live_price import fetch_live_gold
 from src.sjc_live import fetch_live_sjc
+from src.fx_live import fetch_live_usd_vnd
 
 try:
     from streamlit_autorefresh import st_autorefresh
 except ImportError:  # The dashboard still works; install requirements for automatic browser refresh.
     st_autorefresh = None
 from src.atomic_files import atomic_output_path
-from src.sjc_prices import quote_comparison, validate_sjc_quotes
+from src.sjc_prices import (
+    international_equivalent_vnd_per_luong,
+    quote_comparison,
+    validate_sjc_quotes,
+)
 from src.news_sentiment import (
     NewsFetchError,
     NewsTranslationError,
@@ -682,6 +687,11 @@ def _cached_live_sjc():
     return fetch_live_sjc()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_live_fx():
+    return fetch_live_usd_vnd()
+
+
 def _render_live_sjc():
     """Khối giá SJC trực tiếp ở đầu Tab 4.
 
@@ -801,29 +811,6 @@ with tab4:
         style_chart(sjc_chart)
         st.plotly_chart(sjc_chart, width="stretch", key="sjc_history_chart")
 
-        st.markdown("**So sánh tham khảo với vàng thế giới**")
-        fx = st.number_input(
-            "Tỷ giá USD/VND do bạn nhập", min_value=0.0, value=0.0, step=100.0,
-            help="Nhập tỷ giá tham chiếu từ nguồn bạn tin cậy. Không tự động cập nhật và không phải báo giá ngân hàng trực tiếp.",
-            key="sjc_usd_vnd_rate",
-        )
-        if fx > 0 and float(latest_row["Close"]) > 0:
-            try:
-                comparison = quote_comparison(sjc_frame, float(latest_row["Close"]), fx)
-            except ValueError as error:
-                st.error(str(error))
-            else:
-                eq_col, premium_col, pct_col = st.columns(3)
-                eq_col.metric("Giá quốc tế quy đổi*", f"{comparison['international_equivalent']:,.0f} ₫/lượng")
-                premium_col.metric("Chênh lệch so với giá SJC giữa mua–bán", f"{comparison['midpoint_premium_vnd']:+,.0f} ₫")
-                pct_col.metric("Chênh lệch tương đối", f"{comparison['midpoint_premium_pct']:+.2f}%")
-                st.caption(
-                    "*Quy đổi lý thuyết từ GC=F (USD/ounce troy) và tỷ giá bạn nhập, "
-                    "chưa gồm thuế, phí, chi phí nhập khẩu, khác biệt sản phẩm hay điều kiện thị trường. "
-                    "Không dùng làm giá giao dịch hoặc khuyến nghị đầu tư."
-                )
-        else:
-            st.info("Nhập tỷ giá USD/VND để xem phép quy đổi tham khảo; ứng dụng không tự đoán tỷ giá hiện hành.")
         st.dataframe(sjc_frame.sort_values("Date", ascending=False), hide_index=True, width="stretch")
         st.download_button(
             "Tải dữ liệu SJC đã kiểm tra", data=sjc_frame.to_csv(index=False).encode("utf-8-sig"),
@@ -834,6 +821,119 @@ with tab4:
             "Chưa có dữ liệu SJC. Tải mẫu CSV, điền báo giá có nguồn rõ ràng rồi tải lên. "
             "Các giá trị mẫu không được tự tạo để tránh hiển thị giá sai."
         )
+
+    def _render_live_comparison():
+        """Khối so sánh trực tiếp ở cuối Tab 4.
+
+        Tự chạy lại mỗi 60 giây nhờ st.fragment: tỷ giá
+        USD/VND, giá vàng thế giới và giá SJC đều lấy trực
+        tiếp; thiếu nguồn nào thì báo rõ, và mục nhập tỷ
+        giá tay bên dưới vẫn dùng được như trước.
+        """
+        st.markdown("**So sánh tham khảo với vàng thế giới (trực tiếp)**")
+        fx_live = _cached_live_fx()
+        if fx_live is None:
+            st.caption(
+                "Tỷ giá trực tiếp: tạm thời không lấy được — "
+                "bạn có thể nhập tỷ giá tay ở mục bên dưới."
+            )
+            return
+
+        gold_live = _cached_live_gold()
+        if gold_live is not None:
+            gold_price = float(gold_live["price"])
+            gold_label = "Vàng thế giới · USD/oz (trực tiếp)"
+        else:
+            gold_price = float(latest_row["Close"])
+            gold_label = "Vàng thế giới · USD/oz (phiên gần nhất)"
+
+        sjc_live = _cached_live_sjc()
+        if sjc_live is not None:
+            sjc_mid = (sjc_live["buy"] + sjc_live["sell"]) / 2
+            sjc_note = f"SJC trực tiếp · {sjc_live['source']}"
+        elif sjc_frame is not None and not sjc_frame.empty:
+            last_sjc = sjc_frame.iloc[-1]
+            sjc_mid = (
+                float(last_sjc["Buy_VND_per_luong"])
+                + float(last_sjc["Sell_VND_per_luong"])
+            ) / 2
+            sjc_note = (
+                "SJC theo CSV ngày "
+                f"{pd.Timestamp(last_sjc['Date']):%d/%m/%Y}"
+            )
+        else:
+            st.caption(
+                "Chưa có giá SJC (trực tiếp hoặc CSV) để so sánh."
+            )
+            return
+
+        equivalent = international_equivalent_vnd_per_luong(
+            gold_price, fx_live["rate"]
+        )
+        premium = sjc_mid - equivalent
+        premium_pct = (sjc_mid / equivalent - 1) * 100
+
+        fx_col, gold_col, eq_col = st.columns(3)
+        fx_col.metric(
+            "Tỷ giá USD/VND (trực tiếp)", f"{fx_live['rate']:,.0f} ₫"
+        )
+        gold_col.metric(gold_label, f"${gold_price:,.2f}")
+        eq_col.metric(
+            "Giá quốc tế quy đổi*", f"{equivalent:,.0f} ₫/lượng"
+        )
+        prem_col, pct_col = st.columns(2)
+        prem_col.metric(
+            "Chênh lệch so với giá SJC giữa mua–bán",
+            f"{premium:+,.0f} ₫",
+        )
+        pct_col.metric("Chênh lệch tương đối", f"{premium_pct:+.2f}%")
+
+        if fx_live["quote_time"] is not None:
+            fx_time = f"{fx_live['quote_time']:%H:%M %d/%m/%Y}"
+        else:
+            fx_time = f"{fx_live['fetched_at']:%H:%M %d/%m/%Y}"
+        st.caption(
+            f"Tỷ giá: {fx_live['source']} · {fx_time} (giờ VN) · "
+            f"{sjc_note} · Tự làm mới mỗi 60 giây. *Quy đổi lý "
+            "thuyết từ GC=F (USD/ounce troy) và tỷ giá ở trên, "
+            "chưa gồm thuế, phí, chi phí nhập khẩu, khác biệt "
+            "sản phẩm hay điều kiện thị trường. Không dùng làm "
+            "giá giao dịch hoặc khuyến nghị đầu tư."
+        )
+
+    live_comparison_strip = (
+        st.fragment(run_every=60)(_render_live_comparison)
+        if hasattr(st, "fragment")
+        else _render_live_comparison
+    )
+    live_comparison_strip()
+
+    with st.expander("Hoặc nhập tỷ giá thủ công để so sánh với báo giá CSV"):
+        if sjc_frame is not None and not sjc_frame.empty:
+            fx = st.number_input(
+                "Tỷ giá USD/VND do bạn nhập", min_value=0.0, value=0.0, step=100.0,
+                help="Nhập tỷ giá tham chiếu từ nguồn bạn tin cậy. Không tự động cập nhật và không phải báo giá ngân hàng trực tiếp.",
+                key="sjc_usd_vnd_rate",
+            )
+            if fx > 0 and float(latest_row["Close"]) > 0:
+                try:
+                    comparison = quote_comparison(sjc_frame, float(latest_row["Close"]), fx)
+                except ValueError as error:
+                    st.error(str(error))
+                else:
+                    eq_col, premium_col, pct_col = st.columns(3)
+                    eq_col.metric("Giá quốc tế quy đổi*", f"{comparison['international_equivalent']:,.0f} ₫/lượng")
+                    premium_col.metric("Chênh lệch so với giá SJC giữa mua–bán", f"{comparison['midpoint_premium_vnd']:+,.0f} ₫")
+                    pct_col.metric("Chênh lệch tương đối", f"{comparison['midpoint_premium_pct']:+.2f}%")
+                    st.caption(
+                        "*Quy đổi lý thuyết từ GC=F (USD/ounce troy) và tỷ giá bạn nhập, "
+                        "chưa gồm thuế, phí, chi phí nhập khẩu, khác biệt sản phẩm hay điều kiện thị trường. "
+                        "Không dùng làm giá giao dịch hoặc khuyến nghị đầu tư."
+                    )
+            else:
+                st.info("Nhập tỷ giá USD/VND để xem phép quy đổi tham khảo; ứng dụng không tự đoán tỷ giá hiện hành.")
+        else:
+            st.info("Chưa có dữ liệu SJC CSV để so sánh thủ công.")
 
 # ================= TAB 2: BACKTEST QUANT =================
 with tab2:
