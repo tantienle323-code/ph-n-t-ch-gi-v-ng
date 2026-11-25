@@ -783,7 +783,29 @@ with tab4:
                 st.error(f"Không thể lưu dữ liệu SJC: {error}")
             else:
                 st.success("Đã lưu báo giá SJC đã kiểm tra vào data/sjc_prices.csv.")
-        latest_sjc = sjc_frame.iloc[-1]
+        # Gắn thêm báo giá trực tiếp của hôm nay vào phần hiển thị
+        # nếu CSV kết thúc ở một ngày cũ hơn, để số liệu "mới nhất",
+        # biểu đồ và bảng không bị kẹt ở ngày của CSV. Chỉ gắn cho
+        # phần hiển thị: tệp CSV gốc không bị sửa, và khối so sánh
+        # thủ công bên dưới vẫn dùng đúng dữ liệu CSV.
+        sjc_display = sjc_frame
+        live_today = _cached_live_sjc()
+        if live_today is not None:
+            live_date = live_today["fetched_at"].date()
+            csv_latest_date = pd.Timestamp(sjc_frame.iloc[-1]["Date"]).date()
+            if live_date > csv_latest_date:
+                live_row = pd.DataFrame([{
+                    "Date": pd.Timestamp(live_date),
+                    "Buy_VND_per_luong": float(live_today["buy"]),
+                    "Sell_VND_per_luong": float(live_today["sell"]),
+                    "Source": f"Trực tiếp · {live_today['source']}",
+                }])
+                sjc_display = (
+                    pd.concat([sjc_frame, live_row], ignore_index=True)
+                    .sort_values("Date")
+                    .reset_index(drop=True)
+                )
+        latest_sjc = sjc_display.iloc[-1]
         quote_date = pd.Timestamp(latest_sjc["Date"]).date()
         age_days = max((pd.Timestamp.now().date() - quote_date).days, 0)
         if age_days > 3:
@@ -800,20 +822,20 @@ with tab4:
         )
         sjc_chart = go.Figure()
         sjc_chart.add_trace(go.Scatter(
-            x=sjc_frame["Date"], y=sjc_frame["Buy_VND_per_luong"],
+            x=sjc_display["Date"], y=sjc_display["Buy_VND_per_luong"],
             mode="lines+markers", name="Mua vào",
         ))
         sjc_chart.add_trace(go.Scatter(
-            x=sjc_frame["Date"], y=sjc_frame["Sell_VND_per_luong"],
+            x=sjc_display["Date"], y=sjc_display["Sell_VND_per_luong"],
             mode="lines+markers", name="Bán ra",
         ))
         sjc_chart.update_layout(title="Lịch sử báo giá SJC", xaxis_title="Ngày", yaxis_title="VND/lượng", height=390)
         style_chart(sjc_chart)
         st.plotly_chart(sjc_chart, width="stretch", key="sjc_history_chart")
 
-        st.dataframe(sjc_frame.sort_values("Date", ascending=False), hide_index=True, width="stretch")
+        st.dataframe(sjc_display.sort_values("Date", ascending=False), hide_index=True, width="stretch")
         st.download_button(
-            "Tải dữ liệu SJC đã kiểm tra", data=sjc_frame.to_csv(index=False).encode("utf-8-sig"),
+            "Tải dữ liệu SJC đã kiểm tra", data=sjc_display.to_csv(index=False).encode("utf-8-sig"),
             file_name="sjc_prices_validated.csv", mime="text/csv", key="download_sjc_validated",
         )
     else:
