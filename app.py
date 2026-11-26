@@ -133,7 +133,7 @@ if df is None or df.empty:
         st.cache_data.clear()
         st.rerun()
     st.stop()
-
+    
 st.html("""
 <style>
 [data-testid="stHeader"] { background: rgba(9, 15, 21, 0.94); }
@@ -838,6 +838,22 @@ with tab4:
             "Tải dữ liệu SJC đã kiểm tra", data=sjc_display.to_csv(index=False).encode("utf-8-sig"),
             file_name="sjc_prices_validated.csv", mime="text/csv", key="download_sjc_validated",
         )
+        if len(sjc_display) > len(sjc_frame):
+            st.caption(
+                "Dòng trực tiếp hôm nay hiện chỉ gắn vào phần hiển thị. "
+                "Bấm nút dưới đây để lưu hẳn lịch sử đang xem (kèm dòng "
+                "trực tiếp hôm nay) vào data/sjc_prices.csv — lần sau mở "
+                "app, dòng này vẫn còn trong lịch sử."
+            )
+            if st.button("Lưu lịch sử kèm báo giá trực tiếp hôm nay", key="save_sjc_with_live"):
+                try:
+                    with atomic_output_path(SJC_DATA_PATH) as temporary_path:
+                        sjc_display.to_csv(temporary_path, index=False, date_format="%Y-%m-%d")
+                except OSError as error:
+                    st.error(f"Không thể lưu dữ liệu SJC: {error}")
+                else:
+                    st.success("Đã lưu lịch sử SJC kèm báo giá trực tiếp hôm nay vào data/sjc_prices.csv.")
+                    st.rerun()
     else:
         st.info(
             "Chưa có dữ liệu SJC. Tải mẫu CSV, điền báo giá có nguồn rõ ràng rồi tải lên. "
